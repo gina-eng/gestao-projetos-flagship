@@ -417,6 +417,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // ─── Auto-status do cliente baseado em projetos ativos ────────────────
+  // Regra: cliente "ativo" sem nenhum projeto ativo → vira "inativo".
+  //        cliente "inativo" com pelo menos 1 projeto ativo → vira "ativo".
+  // Não interfere em clientes "em_fechamento" ou "churn" (estados manuais).
+  // Recebe a lista de projetos pra evitar stale closure depois de mutar.
+  const reavaliarStatusCliente = useCallback(
+    async (
+      clienteId: string,
+      projetosCorrentes: Projeto[],
+      clientesCorrentes: Cliente[]
+    ) => {
+      const cli = clientesCorrentes.find((c) => c.id === clienteId);
+      if (!cli) return;
+      if (cli.status !== "ativo" && cli.status !== "inativo") return;
+      const temAtivo = projetosCorrentes.some(
+        (p) => p.cliente_id === clienteId && p.status === "ativo"
+      );
+      const novoStatus: Cliente["status"] = temAtivo ? "ativo" : "inativo";
+      if (cli.status === novoStatus) return;
+      try {
+        await api.moveClienteStatus(clienteId, novoStatus);
+      } catch (err) {
+        console.error("[reavaliarStatusCliente] falha:", err);
+        return;
+      }
+      const novoCli: Cliente = { ...cli, status: novoStatus };
+      const registro = fazerRegistro(
+        {
+          entidade: "cliente",
+          entidade_id: clienteId,
+          entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
+          acao: "evento",
+          resumo:
+            novoStatus === "inativo"
+              ? "Cliente marcado como inativo (sem projetos ativos)"
+              : "Cliente reativado (projeto ativo detectado)",
+          mudancas: [
+            { campo: "status", label: "Status", de: cli.status, para: novoStatus },
+          ],
+        },
+        state.sessao
+      );
+      setState((s) => ({
+        ...s,
+        clientes: s.clientes.map((c) => (c.id === clienteId ? novoCli : c)),
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.sessao, persistirAudit]
+  );
+
   // ----- CLIENTE -----
   const saveCliente = useCallback(
     async (cliente: Cliente) => {
@@ -674,13 +726,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         notificarErro("salvar projeto", err);
         return;
       }
-      setState((s) => ({
-        ...s,
-        projetos: existing
-          ? s.projetos.map((p) => (p.id === projeto.id ? projeto : p))
-          : [...s.projetos, projeto],
-      }));
-      if (existing && mudancas.length === 0) return;
+      const projetosAtualizados = existing
+        ? state.projetos.map((p) => (p.id === projeto.id ? projeto : p))
+        : [...state.projetos, projeto];
+      setState((s) => ({ ...s, projetos: projetosAtualizados }));
+      if (existing && mudancas.length === 0) {
+        // Mesmo sem diff, re-avalia: status pode ter mudado em outro lugar.
+        await reavaliarStatusCliente(projeto.cliente_id, projetosAtualizados, state.clientes);
+        return;
+      }
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -694,8 +748,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
       persistirAudit(registro, state.sessao?.email);
+      // Re-avalia o cliente atual; se mudou de cliente, re-avalia o antigo
+      // também para deixar o anterior consistente.
+      await reavaliarStatusCliente(projeto.cliente_id, projetosAtualizados, state.clientes);
+      if (existing && existing.cliente_id !== projeto.cliente_id) {
+        await reavaliarStatusCliente(existing.cliente_id, projetosAtualizados, state.clientes);
+      }
     },
-    [state.projetos, state.fases, state.sessao, persistirAudit]
+    [state.projetos, state.fases, state.sessao, state.clientes, persistirAudit, reavaliarStatusCliente]
   );
 
   // Soft delete: marca como concluído (preserva projeto + pagamentos +
@@ -712,6 +772,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       const novo: Projeto = { ...prj, status: "concluido" };
+      const projetosAtualizados = state.projetos.map((p) =>
+        p.id === id ? novo : p
+      );
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -727,12 +790,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       setState((s) => ({
         ...s,
-        projetos: s.projetos.map((p) => (p.id === id ? novo : p)),
+        projetos: projetosAtualizados,
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
+      // Re-avalia status do cliente vinculado.
+      await reavaliarStatusCliente(prj.cliente_id, projetosAtualizados, state.clientes);
     },
-    [state.projetos, state.sessao, persistirAudit]
+    [state.projetos, state.sessao, state.clientes, persistirAudit, reavaliarStatusCliente]
   );
 
   const moveProjetoFase = useCallback(
@@ -1091,6 +1156,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (!prj) return "Projeto não está mais no banco — recuperação indisponível.";
           const novo: Projeto = { ...prj, status: "ativo" };
           await api.upsertProjeto(novo);
+          const projetosAtualizados = state.projetos.map((p) =>
+            p.id === prj.id ? novo : p
+          );
           const registroNovo = fazerRegistro(
             {
               entidade: "projeto",
@@ -1111,10 +1179,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           );
           setState((s) => ({
             ...s,
-            projetos: s.projetos.map((p) => (p.id === prj.id ? novo : p)),
+            projetos: projetosAtualizados,
             auditoria: [registroNovo, ...s.auditoria],
           }));
           persistirAudit(registroNovo, state.sessao?.email);
+          // Recuperar projeto pode reativar cliente que estava inativo.
+          await reavaliarStatusCliente(prj.cliente_id, projetosAtualizados, state.clientes);
           return null;
         }
         if (reg.entidade === "investidor") {
@@ -1156,6 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state.investidores,
       state.sessao,
       persistirAudit,
+      reavaliarStatusCliente,
     ]
   );
 

@@ -91,8 +91,8 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
 
   return (
     <div className="rounded-xl border border-border/60 bg-card/40 p-3">
-      <div className="kanban-scroller overflow-x-auto pb-3">
-        <div className="flex min-w-max gap-3 pr-1">
+      <div className="kanban-scroller h-[calc(100vh-280px)] min-h-[420px] overflow-x-auto overflow-y-hidden pb-3">
+        <div className="flex h-full min-w-max gap-3 pr-1">
           {FASES_CLIENTE.map((fase) => {
           const cards = clientes.filter((c) => faseDoCliente(c) === fase.value);
           return (
@@ -101,11 +101,11 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
               onDragOver={(e) => onDragOver(e, fase.value)}
               onDrop={(e) => onDrop(e, fase.value)}
               className={cn(
-                "flex w-72 flex-shrink-0 flex-col rounded-xl border bg-muted/30 transition-colors",
+                "flex h-full w-72 flex-shrink-0 flex-col rounded-xl border bg-muted/30 transition-colors",
                 hoverFase === fase.value && draggingId && "border-primary bg-primary/5"
               )}
             >
-              <div className="border-b border-border/60 p-3">
+              <div className="shrink-0 border-b border-border/60 p-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-foreground">
                   {fase.label}
                 </p>
@@ -115,7 +115,7 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-2 min-h-[160px]">
+              <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-2">
                 {cards.length === 0 ? (
                   <div className="flex flex-1 items-center justify-center rounded-md border border-dashed border-border/60 py-6 text-center">
                     <p className="text-xs text-muted-foreground">

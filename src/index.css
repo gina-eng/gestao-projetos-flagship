@@ -137,24 +137,31 @@
   .table-cell-number { @apply text-sm text-content font-mono text-center; }
 }
 
-/* ─── Scrollbar horizontal sempre visível (kanban) ───────────────────────
+/* ─── Scrollbar do kanban — horizontal externa e vertical interna ───────
    Em macOS/iOS as scrollbars somem por padrão e o usuário não percebe que
-   pode rolar. Forçamos uma scrollbar discreta porém visível. */
-.kanban-scroller {
+   pode rolar. Forçamos scrollbars discretas porém visíveis. As colunas
+   internas herdam o mesmo estilo. */
+.kanban-scroller,
+.kanban-scroller * {
   scrollbar-width: thin;            /* Firefox */
   scrollbar-color: rgba(0,0,0,0.25) transparent;
 }
-.kanban-scroller::-webkit-scrollbar {
+.kanban-scroller::-webkit-scrollbar,
+.kanban-scroller *::-webkit-scrollbar {
   height: 10px;
+  width: 8px;
 }
-.kanban-scroller::-webkit-scrollbar-track {
+.kanban-scroller::-webkit-scrollbar-track,
+.kanban-scroller *::-webkit-scrollbar-track {
   background: transparent;
 }
-.kanban-scroller::-webkit-scrollbar-thumb {
+.kanban-scroller::-webkit-scrollbar-thumb,
+.kanban-scroller *::-webkit-scrollbar-thumb {
   background-color: rgba(0,0,0,0.25);
   border-radius: 9999px;
 }
-.kanban-scroller::-webkit-scrollbar-thumb:hover {
+.kanban-scroller::-webkit-scrollbar-thumb:hover,
+.kanban-scroller *::-webkit-scrollbar-thumb:hover {
   background-color: rgba(0,0,0,0.45);
 }
 
