@@ -41,11 +41,16 @@ export function InvestidoresPage() {
       }
       return p.valor_total;
     }
-    // Mensal por projeto: recorrente = valor_total (já é o mensal);
-    // one-time / parcelado = TCV ÷ horizonte (lt_meses, com fallback em num_parcelas).
+    // Mensal por projeto:
+    // - recorrente: valor_total (já é o mensal). Se vier 0, derivamos do TCV÷lt_meses.
+    // - one-time / parcelado: TCV ÷ horizonte (lt_meses, fallback em num_parcelas).
     function mensalDoProjeto(p: typeof projetosDele[number]) {
-      if (p.modelo_cobranca === "recorrente") return p.valor_total;
       const tcvP = tcvDoProjeto(p);
+      if (p.modelo_cobranca === "recorrente") {
+        if (p.valor_total && p.valor_total > 0) return p.valor_total;
+        if (p.lt_meses && p.lt_meses > 0) return tcvP / p.lt_meses;
+        return 0;
+      }
       const meses = p.lt_meses && p.lt_meses > 0
         ? p.lt_meses
         : p.num_parcelas && p.num_parcelas > 0
