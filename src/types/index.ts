@@ -66,7 +66,12 @@ export type FuncaoSquad =
   | "analista"
   | "outro";
 
-export type StatusCliente = "em_fechamento" | "ativo" | "inativo" | "churn";
+export type StatusCliente =
+  | "em_fechamento"
+  | "ativo"
+  | "inativo"
+  | "churn"
+  | "excluido";
 
 // Fases visíveis no Kanban de Cliente. Churn é exibido junto com inativo
 // porque conceitualmente representa um inativo "perdido" (com motivo).
@@ -561,6 +566,7 @@ export const STATUS_CLIENTE_LABEL: Record<StatusCliente, string> = {
   ativo: "Ativo",
   inativo: "Inativo",
   churn: "Churn",
+  excluido: "Excluído",
 };
 
 export const ORIGENS: { value: OrigemProjeto; label: string }[] = [

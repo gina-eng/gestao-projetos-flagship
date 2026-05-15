@@ -89,12 +89,15 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
     setHoverFase(null);
   }
 
+  // Excluídos não aparecem em nenhuma coluna (só na auditoria, com botão recuperar).
+  const visiveis = clientes.filter((c) => c.status !== "excluido");
+
   return (
     <div className="rounded-xl border border-border/60 bg-card/40 p-3">
       <div className="kanban-scroller h-[calc(100vh-280px)] min-h-[420px] overflow-x-auto overflow-y-hidden pb-3">
         <div className="flex h-full min-w-max gap-3 pr-1">
           {FASES_CLIENTE.map((fase) => {
-          const cards = clientes.filter((c) => faseDoCliente(c) === fase.value);
+          const cards = visiveis.filter((c) => faseDoCliente(c) === fase.value);
           return (
             <div
               key={fase.value}

@@ -28,9 +28,11 @@ export function ClientesPage() {
   const [view, setView] = useState<ViewMode>("kanban");
 
   const filtrados = useMemo(() => {
+    // Excluídos saem das listagens (só aparecem na auditoria/recuperar).
+    const base = clientes.filter((c) => c.status !== "excluido");
     const q = busca.trim().toLowerCase();
-    if (!q) return clientes;
-    return clientes.filter(
+    if (!q) return base;
+    return base.filter(
       (c) =>
         c.nome_fantasia.toLowerCase().includes(q) ||
         c.razao_social.toLowerCase().includes(q) ||

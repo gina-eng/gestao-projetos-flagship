@@ -258,7 +258,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // de renderizar (corrige inconsistências de versões anteriores).
         const ajustes: { id: string; novo: Cliente["status"] }[] = [];
         for (const cli of dados.clientes) {
-          if (cli.status === "churn") continue;
+          if (cli.status === "churn" || cli.status === "excluido") continue;
           const temAtivo = dados.projetos.some(
             (p) => p.cliente_id === cli.id && p.status === "ativo"
           );
@@ -472,7 +472,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ) => {
       const cli = clientesCorrentes.find((c) => c.id === clienteId);
       if (!cli) return;
-      if (cli.status === "churn") return; // churn é manual, não toca
+      // churn e excluido são estados terminais manuais — não toca.
+      if (cli.status === "churn" || cli.status === "excluido") return;
       const temAtivo = projetosCorrentes.some(
         (p) => p.cliente_id === clienteId && p.status === "ativo"
       );
@@ -554,29 +555,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.clientes, state.sessao, persistirAudit]
   );
 
-  // Soft delete: marca como inativo (preserva entidade e dados vinculados
-  // pra permitir "Recuperar" depois via auditoria).
+  // Soft delete: marca como "excluido" (estado distinto de "inativo").
+  // Cliente some das listagens mas continua no banco — permite recuperar
+  // pelo histórico de auditoria.
   const deleteCliente = useCallback(
     async (id: string) => {
       const cli = state.clientes.find((c) => c.id === id);
       if (!cli) return;
       const statusAnterior = cli.status;
       try {
-        await api.softDeleteCliente(id);
+        await api.moveClienteStatus(id, "excluido");
       } catch (err) {
         notificarErro("excluir cliente", err);
         return;
       }
-      const novo: Cliente = { ...cli, status: "inativo" };
+      const novo: Cliente = { ...cli, status: "excluido" };
       const registro = fazerRegistro(
         {
           entidade: "cliente",
           entidade_id: id,
           entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
           acao: "remover",
-          resumo: "Cliente marcado como inativo",
+          resumo: "Cliente excluído",
           mudancas: [
-            { campo: "status", label: "Status", de: statusAnterior, para: "inativo" },
+            { campo: "status", label: "Status", de: statusAnterior, para: "excluido" },
           ],
         },
         state.sessao

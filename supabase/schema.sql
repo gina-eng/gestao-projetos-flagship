@@ -131,7 +131,7 @@ create table if not exists public.clientes (
   cidade text,
   estado text,
   status text not null default 'em_fechamento'
-    check (status in ('em_fechamento','ativo','inativo','churn')),
+    check (status in ('em_fechamento','ativo','inativo','churn','excluido')),
   data_cadastro date not null default current_date,
   data_churn date,
   motivo_churn text,
@@ -346,6 +346,13 @@ alter table public.oportunidades
   references public.projetos(id) on delete set null;
 create index if not exists idx_oportunidades_projeto
   on public.oportunidades(projeto_id);
+
+-- ─── Migração 2026-05-15: adicionar 'excluido' ao StatusCliente ─────────
+-- Permite distinguir cliente removido manualmente pelo operador (excluido)
+-- de cliente sem projeto ativo no momento (inativo). Idempotente.
+alter table public.clientes drop constraint if exists clientes_status_check;
+alter table public.clientes add constraint clientes_status_check
+  check (status in ('em_fechamento','ativo','inativo','churn','excluido'));
 
 -- Auditoria (append-only)
 create table if not exists public.auditoria (
