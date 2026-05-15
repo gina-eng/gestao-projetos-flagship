@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  Activity,
   AlertCircle,
   ArrowLeft,
+  Briefcase,
   Building2,
+  CalendarDays,
   ExternalLink,
   RotateCcw,
   Save,
   Trash2,
+  Wallet,
 } from "lucide-react";
 import { useApp } from "@/store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,12 +38,23 @@ import {
   type MotivoPerda,
   MOTIVOS_PERDA,
   type Oportunidade,
+  TIERS,
 } from "@/types";
 
 type SetField = <K extends keyof Oportunidade>(
   key: K,
   value: Oportunidade[K]
 ) => void;
+
+const ETAPA_VARIANT: Record<
+  EtapaOportunidade,
+  "secondary" | "alerta" | "saudavel" | "critico"
+> = {
+  identificada: "secondary",
+  avancando: "alerta",
+  fechado_ganho: "saudavel",
+  fechado_perdido: "critico",
+};
 
 export function OportunidadeDetailPage() {
   const { id } = useParams();
@@ -157,6 +172,7 @@ export function OportunidadeDetailPage() {
   const produto = produtos.find((p) => p.id === draft.produto_id);
   const responsavel = investidores.find((i) => i.id === draft.responsavel_id);
   const categoria = CATEGORIAS.find((c) => c.value === produto?.categoria);
+  const tier = TIERS.find((t) => t.value === cliente?.tier);
   const produtoSelecionadoCat = produto?.categoria;
   const produtosFiltrados = produtos.filter(
     (p) =>
@@ -165,6 +181,11 @@ export function OportunidadeDetailPage() {
   );
 
   const auditoriaOpo = auditoria.filter((a) => a.entidade_id === draft.id);
+
+  const valorMensalDerivado =
+    draft.modelo_cobranca === "recorrente" && draft.lt_meses
+      ? draft.valor_estimado / draft.lt_meses
+      : null;
 
   return (
     <div className="spacing-section">
@@ -188,7 +209,9 @@ export function OportunidadeDetailPage() {
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{ETAPA_OPORTUNIDADE_LABEL[draft.etapa]}</Badge>
+              <span className="font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Oportunidade
+              </span>
               {categoria && (
                 <Badge
                   variant={
@@ -204,6 +227,14 @@ export function OportunidadeDetailPage() {
                   {categoria.label}
                 </Badge>
               )}
+              {tier && (
+                <Badge variant="outline" className="text-[10px]">
+                  {tier.label}
+                </Badge>
+              )}
+              <Badge variant={ETAPA_VARIANT[draft.etapa]}>
+                {ETAPA_OPORTUNIDADE_LABEL[draft.etapa]}
+              </Badge>
             </div>
             <Input
               value={draft.nome}
@@ -220,7 +251,7 @@ export function OportunidadeDetailPage() {
                 className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary"
               >
                 <Building2 className="h-4 w-4" />
-                {cliente.sigla} · {cliente.nome_fantasia}
+                {cliente.nome_fantasia}
                 <ExternalLink className="h-3 w-3" />
               </Link>
             )}
@@ -228,275 +259,340 @@ export function OportunidadeDetailPage() {
         </header>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-title-card">Dados da oportunidade</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Cliente" error={errors.cliente_id}>
-            <Select
-              value={draft.cliente_id || undefined}
-              onValueChange={(v) => setField("cliente_id", v)}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {clientes
-                  .filter((c) => c.status !== "churn")
-                  .map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.sigla} · {c.nome_fantasia}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatBox
+          icon={Activity}
+          label="Etapa"
+          value={ETAPA_OPORTUNIDADE_LABEL[draft.etapa]}
+          tone="primary"
+        />
+        <StatBox
+          icon={CalendarDays}
+          label="Próxima ação"
+          value={
+            draft.data_proxima_acao
+              ? formatDate(draft.data_proxima_acao)
+              : draft.data_fechamento_prevista
+              ? `Prev. ${formatDate(draft.data_fechamento_prevista)}`
+              : "—"
+          }
+          tone="ter"
+        />
+        <StatBox
+          icon={Wallet}
+          label={draft.modelo_cobranca === "recorrente" ? "TCV" : "Valor total"}
+          value={formatCurrency(draft.valor_estimado)}
+          tone="executar"
+        />
+        <StatBox
+          icon={Briefcase}
+          label="Responsável"
+          value={responsavel?.nome.split(" ")[0] ?? "—"}
+          tone="potencializar"
+        />
+      </div>
 
-          <Field label="Responsável">
-            <Select
-              value={draft.responsavel_id || undefined}
-              onValueChange={(v) => setField("responsavel_id", v)}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="—" />
-              </SelectTrigger>
-              <SelectContent>
-                {investidores
-                  .filter((i) => i.status === "ativo")
-                  .map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.nome}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Categoria V4">
-            <div className="flex h-9 items-center">
-              <Badge variant="outline">{categoria?.label ?? "—"}</Badge>
-              <span className="ml-2 text-[11px] text-muted-foreground">
-                vem do produto
-              </span>
-            </div>
-          </Field>
-
-          <Field label="Produto" error={errors.produto_id}>
-            <Select
-              value={draft.produto_id || undefined}
-              onValueChange={(v) => setField("produto_id", v)}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {produtosFiltrados.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.nome}
-                  </SelectItem>
-                ))}
-                {produtosFiltrados.length === 0 && (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Nenhum produto disponível
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Modelo de cobrança">
-            <Select
-              value={draft.modelo_cobranca}
-              onValueChange={(v) =>
-                setField("modelo_cobranca", v as Oportunidade["modelo_cobranca"])
-              }
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="recorrente">Recorrente</SelectItem>
-                <SelectItem value="one_time">One-time</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-
-          <Field label="Valor estimado (TCV)" error={errors.valor_estimado}>
-            <Input
-              type="number"
-              step={0.01}
-              min={0}
-              value={draft.valor_estimado || ""}
-              onChange={(e) =>
-                setField("valor_estimado", parseFloat(e.target.value) || 0)
-              }
-              className="h-9 text-sm"
-            />
-          </Field>
-
-          {draft.modelo_cobranca === "recorrente" && (
-            <Field label="Prazo (meses)">
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-title-card">Dados da oportunidade</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <Field label="Cliente" error={errors.cliente_id}>
               <Select
-                value={
-                  draft.lt_meses === 6 || draft.lt_meses === 12
-                    ? String(draft.lt_meses)
-                    : undefined
+                value={draft.cliente_id || undefined}
+                onValueChange={(v) => setField("cliente_id", v)}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {clientes
+                    .filter((c) => c.status !== "churn")
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.sigla} · {c.nome_fantasia}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Responsável">
+              <Select
+                value={draft.responsavel_id || undefined}
+                onValueChange={(v) => setField("responsavel_id", v)}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  {investidores
+                    .filter((i) => i.status === "ativo")
+                    .map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.nome}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Categoria V4">
+              <div className="flex h-9 items-center">
+                <Badge variant="outline">{categoria?.label ?? "—"}</Badge>
+                <span className="ml-2 text-[11px] text-muted-foreground">
+                  vem do produto
+                </span>
+              </div>
+            </Field>
+
+            <Field label="Produto" error={errors.produto_id}>
+              <Select
+                value={draft.produto_id || undefined}
+                onValueChange={(v) => setField("produto_id", v)}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {produtosFiltrados.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.nome}
+                    </SelectItem>
+                  ))}
+                  {produtosFiltrados.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      Nenhum produto disponível
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Modelo de cobrança">
+              <Select
+                value={draft.modelo_cobranca}
+                onValueChange={(v) =>
+                  setField(
+                    "modelo_cobranca",
+                    v as Oportunidade["modelo_cobranca"]
+                  )
                 }
-                onValueChange={(v) => setField("lt_meses", parseInt(v, 10))}
               >
                 <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="6 ou 12" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="6">6 meses</SelectItem>
-                  <SelectItem value="12">12 meses</SelectItem>
+                  <SelectItem value="recorrente">Recorrente</SelectItem>
+                  <SelectItem value="one_time">One-time</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-          )}
 
-          <Field label="Etapa">
-            <Select
-              value={draft.etapa}
-              onValueChange={(v) => setField("etapa", v as EtapaOportunidade)}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ETAPAS_OPORTUNIDADE.map((e) => (
-                  <SelectItem key={e.value} value={e.value}>
-                    {e.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-
-          {draft.etapa === "fechado_perdido" && (
             <Field
-              label="Motivo da perda"
-              error={errors.motivo_perda}
-              className="sm:col-span-2"
+              label="Valor estimado (TCV)"
+              error={errors.valor_estimado}
             >
-              <Select
-                value={draft.motivo_perda || undefined}
-                onValueChange={(v) => setField("motivo_perda", v as MotivoPerda)}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MOTIVOS_PERDA.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
-
-          <Field label="Próxima ação" className="sm:col-span-2">
-            <Input
-              value={draft.proxima_acao ?? ""}
-              onChange={(e) =>
-                setField("proxima_acao", e.target.value || undefined)
-              }
-              placeholder="Ex.: Enviar proposta até 15/03"
-              className="h-9 text-sm"
-            />
-          </Field>
-
-          <Field label="Data da próxima ação">
-            <Input
-              type="date"
-              value={draft.data_proxima_acao ?? ""}
-              onChange={(e) =>
-                setField("data_proxima_acao", e.target.value || undefined)
-              }
-              className="h-9 text-sm"
-            />
-          </Field>
-
-          <Field label="Fechamento previsto">
-            <Input
-              type="date"
-              value={draft.data_fechamento_prevista ?? ""}
-              onChange={(e) =>
-                setField("data_fechamento_prevista", e.target.value || undefined)
-              }
-              className="h-9 text-sm"
-            />
-          </Field>
-
-          {(draft.etapa === "fechado_ganho" ||
-            draft.etapa === "fechado_perdido") && (
-            <Field label="Data de fechamento real">
               <Input
-                type="date"
-                value={draft.data_fechamento_real ?? ""}
+                type="number"
+                step={0.01}
+                min={0}
+                value={draft.valor_estimado || ""}
                 onChange={(e) =>
-                  setField("data_fechamento_real", e.target.value || undefined)
+                  setField("valor_estimado", parseFloat(e.target.value) || 0)
                 }
                 className="h-9 text-sm"
               />
             </Field>
-          )}
 
-          <Field label="Observações" className="sm:col-span-2">
-            <Textarea
-              value={draft.observacoes ?? ""}
-              onChange={(e) =>
-                setField("observacoes", e.target.value || undefined)
-              }
-              rows={3}
-              className="text-sm"
-            />
-          </Field>
-        </CardContent>
-      </Card>
+            {draft.modelo_cobranca === "recorrente" && (
+              <Field label="Prazo (meses)">
+                <Select
+                  value={
+                    draft.lt_meses === 6 || draft.lt_meses === 12
+                      ? String(draft.lt_meses)
+                      : undefined
+                  }
+                  onValueChange={(v) => setField("lt_meses", parseInt(v, 10))}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="6 ou 12" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6 meses</SelectItem>
+                    <SelectItem value="12">12 meses</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
 
-      {/* Resumo financeiro derivado */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-title-card">Resumo financeiro</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 text-center sm:grid-cols-3">
-          <div className="rounded-lg bg-muted p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              TCV estimado
-            </p>
-            <p className="text-base font-bold tabular-nums">
-              {formatCurrency(draft.valor_estimado)}
-            </p>
-          </div>
-          {draft.modelo_cobranca === "recorrente" && draft.lt_meses && (
+            <Field label="Etapa">
+              <Select
+                value={draft.etapa}
+                onValueChange={(v) => setField("etapa", v as EtapaOportunidade)}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ETAPAS_OPORTUNIDADE.map((e) => (
+                    <SelectItem key={e.value} value={e.value}>
+                      {e.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            {draft.etapa === "fechado_perdido" && (
+              <Field
+                label="Motivo da perda"
+                error={errors.motivo_perda}
+                className="sm:col-span-2"
+              >
+                <Select
+                  value={draft.motivo_perda || undefined}
+                  onValueChange={(v) =>
+                    setField("motivo_perda", v as MotivoPerda)
+                  }
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOTIVOS_PERDA.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
+
+            <Field label="Próxima ação" className="sm:col-span-2">
+              <Input
+                value={draft.proxima_acao ?? ""}
+                onChange={(e) =>
+                  setField("proxima_acao", e.target.value || undefined)
+                }
+                placeholder="Ex.: Enviar proposta até 15/03"
+                className="h-9 text-sm"
+              />
+            </Field>
+
+            <Field label="Data da próxima ação">
+              <Input
+                type="date"
+                value={draft.data_proxima_acao ?? ""}
+                onChange={(e) =>
+                  setField("data_proxima_acao", e.target.value || undefined)
+                }
+                className="h-9 text-sm"
+              />
+            </Field>
+
+            <Field label="Fechamento previsto">
+              <Input
+                type="date"
+                value={draft.data_fechamento_prevista ?? ""}
+                onChange={(e) =>
+                  setField(
+                    "data_fechamento_prevista",
+                    e.target.value || undefined
+                  )
+                }
+                className="h-9 text-sm"
+              />
+            </Field>
+
+            {(draft.etapa === "fechado_ganho" ||
+              draft.etapa === "fechado_perdido") && (
+              <Field label="Data de fechamento real">
+                <Input
+                  type="date"
+                  value={draft.data_fechamento_real ?? ""}
+                  onChange={(e) =>
+                    setField(
+                      "data_fechamento_real",
+                      e.target.value || undefined
+                    )
+                  }
+                  className="h-9 text-sm"
+                />
+              </Field>
+            )}
+
+            <Field label="Observações" className="sm:col-span-2">
+              <Textarea
+                value={draft.observacoes ?? ""}
+                onChange={(e) =>
+                  setField("observacoes", e.target.value || undefined)
+                }
+                rows={3}
+                className="text-sm"
+              />
+            </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-title-card">Resumo financeiro</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             <div className="rounded-lg bg-muted p-3">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Mensal (derivado)
+                TCV estimado
               </p>
-              <p className="text-base font-bold tabular-nums">
-                {formatCurrency(draft.valor_estimado / draft.lt_meses)}
+              <p className="text-lg font-bold tabular-nums">
+                {formatCurrency(draft.valor_estimado)}
               </p>
             </div>
-          )}
-          <div className="rounded-lg bg-muted p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              Responsável
-            </p>
-            <p className="text-base font-semibold">
-              {responsavel?.nome ?? "—"}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            {valorMensalDerivado !== null && (
+              <div className="rounded-lg bg-muted p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Mensal (derivado)
+                </p>
+                <p className="text-lg font-bold tabular-nums">
+                  {formatCurrency(valorMensalDerivado)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  TCV ÷ {draft.lt_meses} meses
+                </p>
+              </div>
+            )}
+            <div className="rounded-lg border border-border/60 bg-card p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Modelo
+              </p>
+              <p className="text-sm font-semibold capitalize">
+                {draft.modelo_cobranca === "recorrente"
+                  ? "Recorrente"
+                  : "One-time"}
+              </p>
+            </div>
+            {cliente && (
+              <div className="rounded-lg border border-border/60 bg-card p-3">
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Cliente
+                </p>
+                <Link
+                  to={`/clientes/${cliente.id}`}
+                  className="text-sm font-semibold hover:text-primary"
+                >
+                  {cliente.sigla} · {cliente.nome_fantasia}
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Histórico */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-title-card">Histórico</CardTitle>
+          <CardTitle className="text-title-card">Histórico de alterações</CardTitle>
         </CardHeader>
         <CardContent>
           <HistoricoAuditoria
@@ -508,7 +604,6 @@ export function OportunidadeDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Zona perigosa */}
       <Card className="border-destructive/40">
         <CardHeader>
           <CardTitle className="text-title-card text-destructive">
@@ -526,7 +621,11 @@ export function OportunidadeDetailPage() {
                 perdida, mude a etapa acima.
               </p>
             </div>
-            <Button variant="destructive" onClick={excluir} className="shrink-0">
+            <Button
+              variant="destructive"
+              onClick={excluir}
+              className="shrink-0"
+            >
               <Trash2 className="h-4 w-4" />
               Excluir oportunidade
             </Button>
@@ -573,6 +672,44 @@ function SaveBar({
         </div>
       </div>
     </div>
+  );
+}
+
+function StatBox({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: typeof Activity;
+  label: string;
+  value: string;
+  tone: "primary" | "ter" | "executar" | "potencializar";
+}) {
+  const colors: Record<string, string> = {
+    primary: "bg-primary/10 text-primary",
+    ter: "bg-ter/10 text-ter",
+    executar: "bg-executar/10 text-executar",
+    potencializar: "bg-potencializar/10 text-potencializar",
+  };
+  return (
+    <Card>
+      <CardContent className="flex items-start gap-3 p-4">
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-xl ${colors[tone]}`}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
+          <p className="truncate text-sm font-semibold tabular-nums text-foreground">
+            {value}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

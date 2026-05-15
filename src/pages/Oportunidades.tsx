@@ -24,6 +24,17 @@ import {
   ETAPAS_OPORTUNIDADE,
 } from "@/types";
 
+// Cores das badges/etapa para visualização rápida na lista.
+const ETAPA_VARIANT: Record<
+  EtapaOportunidade,
+  "secondary" | "alerta" | "saudavel" | "critico"
+> = {
+  identificada: "secondary",
+  avancando: "alerta",
+  fechado_ganho: "saudavel",
+  fechado_perdido: "critico",
+};
+
 type ViewMode = "kanban" | "lista";
 
 export function OportunidadesPage() {
@@ -57,19 +68,11 @@ export function OportunidadesPage() {
 
   const filtroAtivo = filtroEtapa !== "all" || filtroResp !== "all";
 
-  // Métricas rápidas no header
-  const pipelineAtivo = oportunidades
-    .filter((o) => o.etapa !== "fechado_ganho" && o.etapa !== "fechado_perdido")
-    .reduce((acc, o) => acc + o.valor_estimado, 0);
-  const ganhasTotal = oportunidades
-    .filter((o) => o.etapa === "fechado_ganho")
-    .reduce((acc, o) => acc + o.valor_estimado, 0);
-
   return (
     <div className="spacing-section">
       <PageHeader
         title="Oportunidades"
-        description="Pipeline de cross-sell e upsell para clientes da carteira."
+        description="Pipeline de cross-sell e upsell para clientes da carteira. Arraste cards entre etapas para mover."
         actions={
           <>
             <div className="flex rounded-md border border-input bg-background p-0.5">
@@ -100,70 +103,6 @@ export function OportunidadesPage() {
         }
       />
 
-      {/* Métricas rápidas */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <Card>
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Pipeline em aberto
-              </p>
-              <p className="text-base font-bold tabular-nums">
-                {formatCurrency(pipelineAtivo)}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {
-                  oportunidades.filter(
-                    (o) =>
-                      o.etapa !== "fechado_ganho" &&
-                      o.etapa !== "fechado_perdido"
-                  ).length
-                } em andamento
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Fechado ganho (TCV total)
-              </p>
-              <p className="text-base font-bold tabular-nums">
-                {formatCurrency(ganhasTotal)}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {
-                  oportunidades.filter((o) => o.etapa === "fechado_ganho").length
-                } oportunidades
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-start gap-3 p-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-100 text-rose-800">
-              <Sparkles className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Fechado perdido
-              </p>
-              <p className="text-base font-bold tabular-nums">
-                {oportunidades.filter((o) => o.etapa === "fechado_perdido").length}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filtros + busca */}
       <Card>
         <CardContent className="flex flex-wrap items-center gap-2 p-4">
           <div className="relative flex-1 min-w-[200px]">
@@ -285,7 +224,10 @@ export function OportunidadesPage() {
                       <td className="p-3 text-content">{prod?.nome ?? "—"}</td>
                       <td className="p-3 text-content">{resp?.nome ?? "—"}</td>
                       <td className="p-3">
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge
+                          variant={ETAPA_VARIANT[o.etapa]}
+                          className="text-[10px]"
+                        >
                           {ETAPA_OPORTUNIDADE_LABEL[o.etapa]}
                         </Badge>
                       </td>
