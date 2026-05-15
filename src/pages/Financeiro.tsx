@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/Layout";
 import { PagamentoFormDialog } from "@/components/financeiro/PagamentoFormDialog";
 import { ParcelaActionDialog } from "@/components/financeiro/ParcelaActionDialog";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, produtosDoProjeto } from "@/lib/utils";
 import { Cliente, Pagamento, Parcela, Projeto, type StatusParcela } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +94,8 @@ function gerarMeses(inicio: Date, qtd: number) {
 }
 
 export function FinanceiroPage() {
-  const { pagamentos, projetos, clientes, sincronizarTodosPagamentos } = useApp();
+  const { pagamentos, projetos, clientes, produtos, sincronizarTodosPagamentos } =
+    useApp();
   const [novoOpen, setNovoOpen] = useState(false);
   const [parcelaSel, setParcelaSel] = useState<{ pagamentoId: string; parcela: Parcela } | null>(null);
   const [sincronizando, setSincronizando] = useState(false);
@@ -529,7 +530,9 @@ export function FinanceiroPage() {
                                     {lp.projeto.codigo}
                                   </span>
                                   <span className="truncate text-xs text-content">
-                                    {lp.projeto.nome}
+                                    {produtosDoProjeto(lp.projeto, produtos)
+                                      .map(({ produto }) => produto?.nome ?? "—")
+                                      .join(" · ") || "—"}
                                   </span>
                                 </Link>
                               </td>

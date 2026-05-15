@@ -15,6 +15,7 @@ import {
   ContatoCliente,
   Fase,
   Investidor,
+  ItemNegociacao,
   LinkRapido,
   Oportunidade,
   Pagamento,
@@ -317,6 +318,31 @@ export async function fetchProjetos(): Promise<Projeto[]> {
   return (data ?? []).map(rowToProjeto);
 }
 
+// Lê o JSON `itens` da coluna `projetos.itens` (jsonb no Supabase).
+// Retorna undefined quando ausente — a UI usa `produto_id` legado.
+function parseItens(raw: unknown): ItemNegociacao[] | undefined {
+  if (!raw) return undefined;
+  const arr =
+    typeof raw === "string"
+      ? (() => {
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return null;
+          }
+        })()
+      : raw;
+  if (!Array.isArray(arr)) return undefined;
+  return arr
+    .filter((it): it is Record<string, unknown> => !!it && typeof it === "object")
+    .map((it) => ({
+      id: String(it.id ?? ""),
+      produto_id: String(it.produto_id ?? ""),
+      variacao_id: it.variacao_id ? String(it.variacao_id) : undefined,
+    }))
+    .filter((it) => it.produto_id);
+}
+
 function rowToProjeto(r: Record<string, unknown>): Projeto {
   const squadRows = (r.squad_membros as Record<string, unknown>[] | null) ?? [];
   const reunioesRows = (r.reunioes as Record<string, unknown>[] | null) ?? [];
@@ -327,6 +353,15 @@ function rowToProjeto(r: Record<string, unknown>): Projeto {
     cliente_id: r.cliente_id as string,
     produto_id: r.produto_id as string,
     variacao_id: (r.variacao_id as string) ?? undefined,
+    itens: parseItens(r.itens),
+    tipo_negociacao:
+      (r.tipo_negociacao as Projeto["tipo_negociacao"]) ?? undefined,
+    venda_id: (r.venda_id as string) ?? undefined,
+    venda_seq:
+      r.venda_seq === null || r.venda_seq === undefined
+        ? undefined
+        : Number(r.venda_seq),
+    venda_letra: (r.venda_letra as string) ?? undefined,
     nome: r.nome as string,
     modelo_cobranca: r.modelo_cobranca as Projeto["modelo_cobranca"],
     valor_total: Number(r.valor_total),
@@ -403,6 +438,11 @@ export async function upsertProjeto(p: Projeto): Promise<void> {
     cliente_id: p.cliente_id,
     produto_id: p.produto_id,
     variacao_id: p.variacao_id ?? null,
+    itens: p.itens && p.itens.length > 0 ? p.itens : null,
+    tipo_negociacao: p.tipo_negociacao ?? null,
+    venda_id: p.venda_id ?? null,
+    venda_seq: p.venda_seq ?? null,
+    venda_letra: p.venda_letra ?? null,
     nome: p.nome,
     modelo_cobranca: p.modelo_cobranca,
     valor_total: p.valor_total,

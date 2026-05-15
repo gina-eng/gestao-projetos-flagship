@@ -1,5 +1,12 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type {
+  CategoriaV4,
+  ItemNegociacao,
+  Produto,
+  Projeto,
+  TipoNegociacao,
+} from "@/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -105,6 +112,72 @@ export function labelSegmento(
   }
   return mapa[cliente.segmento] ?? cliente.segmento;
 }
+
+// ─── Helpers de negociação (múltiplos produtos por projeto) ───
+
+// Retorna a lista efetiva de itens do projeto. Faz fallback para o `produto_id`
+// legado quando `itens` está vazio (projetos criados antes da feature).
+export function itensDoProjeto(projeto: Projeto): ItemNegociacao[] {
+  if (projeto.itens && projeto.itens.length > 0) return projeto.itens;
+  if (projeto.produto_id) {
+    return [
+      {
+        id: `legacy_${projeto.id}`,
+        produto_id: projeto.produto_id,
+        variacao_id: projeto.variacao_id,
+      },
+    ];
+  }
+  return [];
+}
+
+// Resolve cada item para o produto correspondente no catálogo.
+export function produtosDoProjeto(
+  projeto: Projeto,
+  produtos: Produto[]
+): { item: ItemNegociacao; produto: Produto | undefined }[] {
+  return itensDoProjeto(projeto).map((item) => ({
+    item,
+    produto: produtos.find((p) => p.id === item.produto_id),
+  }));
+}
+
+// Set de categorias presentes no projeto (deriva dos produtos vinculados).
+export function categoriasDoProjeto(
+  projeto: Projeto,
+  produtos: Produto[]
+): CategoriaV4[] {
+  const set = new Set<CategoriaV4>();
+  for (const { produto } of produtosDoProjeto(projeto, produtos)) {
+    if (produto) set.add(produto.categoria);
+  }
+  return Array.from(set);
+}
+
+// Conjunto de categorias compatíveis com cada tipo de negociação.
+// EXECUTAR fica sozinho num bloco. Os demais (Saber/Ter/Destrava Receita/
+// Potencializar) ficam juntos em bloco one-time.
+export function categoriasDoTipo(tipo: TipoNegociacao): CategoriaV4[] {
+  if (tipo === "recorrente_executar") return ["EXECUTAR"];
+  return ["SABER", "TER", "DESTRAVA_RECEITA", "POTENCIALIZAR"];
+}
+
+// Tipo de negociação inferido a partir da categoria do produto.
+export function tipoNegociacaoDaCategoria(
+  cat: CategoriaV4 | undefined | null
+): TipoNegociacao {
+  return cat === "EXECUTAR" ? "recorrente_executar" : "one_time";
+}
+
+export const TIPO_NEGOCIACAO_LABEL: Record<TipoNegociacao, string> = {
+  one_time: "One-time (Saber/Ter/Destrava Receita/Potencializar)",
+  recorrente_executar: "Recorrente (Executar)",
+};
+
+export const TIPO_NEGOCIACAO_LABEL_CURTO: Record<TipoNegociacao, string> = {
+  one_time: "One-time",
+  recorrente_executar: "Executar",
+};
 
 export function suggestSigla(nomeFantasia: string): string {
   const clean = nomeFantasia

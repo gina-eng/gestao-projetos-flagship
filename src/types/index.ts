@@ -318,12 +318,44 @@ export interface Produto {
   variacoes: VariacaoProduto[];
 }
 
+// Item de uma negociação: 1 produto (com variação opcional) dentro da lista de
+// produtos contratados na mesma negociação. Permite múltiplos produtos por
+// projeto, todos sob a mesma forma de pagamento e tipo de negociação.
+export interface ItemNegociacao {
+  id: string;
+  produto_id: string;
+  variacao_id?: string;
+}
+
+// Tipo da negociação que originou o projeto.
+// - `one_time`: produtos Saber/Ter/Destrava Receita/Potencializar, valor cheio.
+// - `recorrente_executar`: produtos Executar, TCV dividido pelo LT vira mensal.
+export type TipoNegociacao = "one_time" | "recorrente_executar";
+
 export interface Projeto {
   id: string;
   codigo: string;
   cliente_id: string;
-  produto_id: string;          // ← agora referencia o catálogo
-  variacao_id?: string;        // SKU específico dentro do produto (opcional)
+  // `produto_id` permanece como campo legado/principal para retrocompatibilidade
+  // com projetos antigos (1 produto). Para projetos novos com múltiplos itens,
+  // o primeiro item da lista populariza este campo.
+  produto_id: string;
+  variacao_id?: string;        // idem — primeiro item populariza
+  // Lista completa de produtos vinculados à negociação. Quando vazia/ausente,
+  // a UI faz fallback para `produto_id` + `variacao_id`.
+  itens?: ItemNegociacao[];
+  // Identifica o tipo da negociação. Usado para derivar a categoria do card
+  // e validar mistura de produtos no Handoff/ProjetoFormDialog.
+  tipo_negociacao?: TipoNegociacao;
+  // ID compartilhado por todos os projetos criados no mesmo Handoff.
+  // Permite agrupar cards que vieram da mesma venda.
+  venda_id?: string;
+  // Sequencial da venda dentro do cliente (1, 2, 3...). Aparece como `O{N}`
+  // no código do projeto. Ex.: `BYLN-O1-A`.
+  venda_seq?: number;
+  // Letra da negociação dentro da venda. Aparece como `-{LETRA}` no código.
+  // Ex.: "A", "B", "C".
+  venda_letra?: string;
   nome: string;
   modelo_cobranca: "one_time" | "recorrente";
   // Em projetos recorrentes, este é o valor MENSAL. Em one-time, o valor total.

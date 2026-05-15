@@ -10,7 +10,13 @@ import { PageHeader } from "@/components/layout/Layout";
 import { ProjetoFormDialog } from "@/components/projetos/ProjetoFormDialog";
 import { ProjetoKanban } from "@/components/projetos/ProjetoKanban";
 import { FasesManagerDialog } from "@/components/projetos/FasesManagerDialog";
-import { formatCurrency, formatDate, nomeProduto, variantCategoria } from "@/lib/utils";
+import {
+  categoriasDoProjeto,
+  formatCurrency,
+  formatDate,
+  produtosDoProjeto,
+  variantCategoria,
+} from "@/lib/utils";
 import {
   CATEGORIAS,
   Projeto,
@@ -58,9 +64,11 @@ export function ProjetosPage() {
     const q = busca.trim().toLowerCase();
     return projetos.filter((p) => {
       if (p.status !== "ativo" && p.status !== "pausado") return false;
-      const prod = produtos.find((pr) => pr.id === p.produto_id);
       const cli = clientes.find((c) => c.id === p.cliente_id);
-      if (filtroCategoria !== "all" && prod?.categoria !== filtroCategoria) return false;
+      const cats = categoriasDoProjeto(p, produtos);
+      const prods = produtosDoProjeto(p, produtos);
+      if (filtroCategoria !== "all" && !cats.includes(filtroCategoria))
+        return false;
       if (filtroTier !== "all" && cli?.tier !== filtroTier) return false;
       if (filtroSaude !== "all" && p.saude_atual !== filtroSaude) return false;
       if (q) {
@@ -69,7 +77,7 @@ export function ProjetosPage() {
           p.codigo,
           cli?.nome_fantasia,
           cli?.razao_social,
-          prod?.nome,
+          ...prods.map(({ produto }) => produto?.nome ?? ""),
         ]
           .filter(Boolean)
           .join(" ")
@@ -208,10 +216,9 @@ export function ProjetosPage() {
               <thead className="border-b">
                 <tr>
                   <th className="table-header p-3 text-left">Código</th>
-                  <th className="table-header p-3 text-left">Projeto</th>
                   <th className="table-header p-3 text-left">Cliente</th>
-                  <th className="table-header p-3 text-left">Produto</th>
-                  <th className="table-header p-3 text-left">Categoria</th>
+                  <th className="table-header p-3 text-left">Produtos</th>
+                  <th className="table-header p-3 text-left">Categorias</th>
                   <th className="table-header p-3 text-left">Tier</th>
                   <th className="table-header p-3 text-left">Fase</th>
                   <th className="table-header p-3 text-left">Saúde</th>
@@ -222,7 +229,8 @@ export function ProjetosPage() {
               <tbody>
                 {filtrados.map((p) => {
                   const cliente = clientes.find((c) => c.id === p.cliente_id);
-                  const produto = produtos.find((pr) => pr.id === p.produto_id);
+                  const prods = produtosDoProjeto(p, produtos);
+                  const cats = categoriasDoProjeto(p, produtos);
                   return (
                     <tr key={p.id} className="border-b last:border-0 hover:bg-muted/30">
                       <td className="p-3">
@@ -233,17 +241,40 @@ export function ProjetosPage() {
                           {p.codigo}
                         </Link>
                       </td>
-                      <td className="p-3 font-medium">{p.nome}</td>
-                      <td className="p-3 text-content">{cliente?.nome_fantasia ?? "—"}</td>
+                      <td className="p-3 font-medium">
+                        {cliente?.nome_fantasia ?? "—"}
+                      </td>
                       <td className="p-3 text-content">
-                        {nomeProduto({ produto, variacao_id: p.variacao_id })}
+                        {prods.length === 0 ? (
+                          "—"
+                        ) : (
+                          <div className="space-y-0.5">
+                            {prods.slice(0, 2).map(({ item, produto }) => (
+                              <div key={item.id} className="text-xs">
+                                {produto?.nome ?? "—"}
+                              </div>
+                            ))}
+                            {prods.length > 2 && (
+                              <div className="text-[10px] italic text-muted-foreground">
+                                +{prods.length - 2}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="p-3">
-                        {produto && (
-                          <Badge variant={variantCategoria(produto.categoria)}>
-                            {CATEGORIAS.find((c) => c.value === produto.categoria)?.label}
-                          </Badge>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {cats.slice(0, 2).map((cat) => (
+                            <Badge key={cat} variant={variantCategoria(cat)} className="text-[10px]">
+                              {CATEGORIAS.find((c) => c.value === cat)?.label}
+                            </Badge>
+                          ))}
+                          {cats.length > 2 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              +{cats.length - 2}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3">
                         {cliente && (
@@ -269,7 +300,7 @@ export function ProjetosPage() {
                 })}
                 {filtrados.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
                       Nenhum projeto encontrado com os filtros atuais.
                     </td>
                   </tr>

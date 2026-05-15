@@ -40,7 +40,18 @@ import {
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
 import { ParcelaActionDialog } from "@/components/financeiro/ParcelaActionDialog";
-import { cn, formatCurrency, formatDate, uid, variantCategoria } from "@/lib/utils";
+import {
+  categoriasDoProjeto,
+  categoriasDoTipo,
+  cn,
+  formatCurrency,
+  formatDate,
+  itensDoProjeto,
+  produtosDoProjeto,
+  uid,
+  variantCategoria,
+  TIPO_NEGOCIACAO_LABEL,
+} from "@/lib/utils";
 import {
   CATEGORIAS,
   type CategoriaV4,
@@ -50,6 +61,7 @@ import {
   FUNCOES_SQUAD,
   type FuncaoSquad,
   type Investidor,
+  type ItemNegociacao,
   MOTIVOS_CHURN,
   type MotivoChurn,
   ORIGENS,
@@ -68,10 +80,13 @@ import {
   STATUS_PROJETO_LABEL,
   type StatusProjeto,
   TIERS,
+  TipoNegociacao,
   TIPOS_REUNIAO,
   TIPO_REUNIAO_LABEL,
   type TipoReuniao,
 } from "@/types";
+import { Search } from "lucide-react";
+import { useRef } from "react";
 
 // --------------------- Constantes visuais ---------------------
 
@@ -223,8 +238,16 @@ export function ProjetoDetailPage() {
   function validar(d: Projeto): Record<string, string> {
     const e: Record<string, string> = {};
     if (!d.cliente_id) e.cliente_id = "Selecione um cliente";
-    if (!d.produto_id) e.produto_id = "Selecione um produto";
-    if (!d.nome.trim()) e.nome = "Obrigatório";
+    const itensProjeto = itensDoProjeto(d);
+    if (itensProjeto.length === 0) e.itens = "Adicione ao menos 1 produto";
+    // Variação obrigatória quando o produto tem variações ativas.
+    itensProjeto.forEach((it) => {
+      const prod = produtos.find((p) => p.id === it.produto_id);
+      const ativas = (prod?.variacoes ?? []).filter((v) => v.ativo);
+      if (ativas.length > 0 && !it.variacao_id) {
+        e[`item_${it.id}_variacao`] = "Selecione variação";
+      }
+    });
     // TCV é o valor base obrigatório. valor_total deriva dele.
     const tcvEfetivo = tcvDoProjeto(d);
     if (tcvEfetivo <= 0) e.valor_tcv = "Informe o TCV do projeto";
@@ -238,11 +261,6 @@ export function ProjetoDetailPage() {
     if (d.squad.length === 0) e.squad = "Adicione ao menos um investidor";
     if (d.status === "churn" && !d.motivo_churn) {
       e.motivo_churn = "Selecione o motivo do churn";
-    }
-    const prodSel = produtos.find((p) => p.id === d.produto_id);
-    const variacoesAtivas = (prodSel?.variacoes ?? []).filter((v) => v.ativo);
-    if (variacoesAtivas.length > 0 && !d.variacao_id) {
-      e.variacao_id = "Selecione uma variação";
     }
     return e;
   }
@@ -276,8 +294,8 @@ export function ProjetoDetailPage() {
   }
 
   const cliente = clientes.find((c) => c.id === draft.cliente_id);
-  const produto = produtos.find((p) => p.id === draft.produto_id);
-  const categoria = CATEGORIAS.find((c) => c.value === produto?.categoria);
+  const categoriasProjeto = categoriasDoProjeto(draft, produtos);
+  const itensResolvidos = produtosDoProjeto(draft, produtos);
   const tier = TIERS.find((t) => t.value === cliente?.tier);
   const fase = fases.find((f) => f.id === draft.fase_atual);
   const pagamentosProjeto = pagamentos.filter((p) => p.projeto_id === draft.id);
@@ -320,9 +338,15 @@ export function ProjetoDetailPage() {
               <span className="font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 {draft.codigo}
               </span>
-              <Badge variant={variantCategoria(categoria?.value)}>
-                {categoria?.label ?? "—"}
-              </Badge>
+              {categoriasProjeto.length === 0 ? (
+                <Badge variant="outline" className="text-[10px]">—</Badge>
+              ) : (
+                categoriasProjeto.map((cat) => (
+                  <Badge key={cat} variant={variantCategoria(cat)}>
+                    {CATEGORIAS.find((c) => c.value === cat)?.label}
+                  </Badge>
+                ))
+              )}
               <Badge variant="outline" className="text-[10px]">
                 {tier?.label ?? "—"}
               </Badge>
@@ -330,26 +354,27 @@ export function ProjetoDetailPage() {
                 {SAUDE_LABEL[draft.saude_atual]}
               </Badge>
             </div>
-            <div>
-              <Input
-                value={draft.nome}
-                onChange={(e) => setField("nome", e.target.value)}
-                placeholder="Nome do projeto"
-                className="h-auto border-0 bg-transparent px-0 py-0 text-3xl font-semibold tracking-tight text-foreground shadow-none focus-visible:ring-0"
-              />
-              {errors.nome && (
-                <p className="text-xs text-destructive">{errors.nome}</p>
+            {/* Título grande: cliente. Subtítulo: produtos da negociação. */}
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+              {cliente ? (
+                <Link
+                  to={`/clientes/${cliente.id}`}
+                  className="inline-flex items-center gap-2 hover:text-primary"
+                >
+                  <Building2 className="h-7 w-7" />
+                  {cliente.nome_fantasia}
+                  <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                </Link>
+              ) : (
+                "—"
               )}
-            </div>
-            {cliente && (
-              <Link
-                to={`/clientes/${cliente.id}`}
-                className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary"
-              >
-                <Building2 className="h-4 w-4" />
-                {cliente.nome_fantasia}
-                <ExternalLink className="h-3 w-3" />
-              </Link>
+            </h1>
+            {itensResolvidos.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {itensResolvidos
+                  .map(({ produto }) => produto?.nome ?? "—")
+                  .join(" · ")}
+              </p>
             )}
           </div>
         </header>
@@ -566,47 +591,87 @@ function DadosProjetoCard({
 }) {
   const clientesAtivos = clientes.filter((c) => c.status !== "inativo");
 
-  // Categoria selecionada — state local independente do produto. Inicializa
-  // a partir do produto vinculado, mas persiste sozinha quando o produto é
-  // limpo (para que o filtro de produtos continue funcionando).
-  const produtoSelecionado = produtos.find((p) => p.id === draft.produto_id);
-  const [categoriaSel, setCategoriaSel] = useState<CategoriaV4 | "">(
-    produtoSelecionado?.categoria ?? ""
-  );
-  // Quando o projeto muda (ID diferente), ressincroniza.
-  useEffect(() => {
-    setCategoriaSel(produtoSelecionado?.categoria ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.id]);
-
   // Cliente é protegido — trocar exige confirmação explícita.
   const [editandoCliente, setEditandoCliente] = useState(false);
   const clienteVinculado = clientes.find((c) => c.id === draft.cliente_id);
 
-  const produtosFiltrados = produtos.filter(
-    (p) => p.ativo && (!categoriaSel || p.categoria === categoriaSel)
-  );
-  const variacoesAtivas = (produtoSelecionado?.variacoes ?? []).filter(
-    (v) => v.ativo
+  // Tipo da negociação: usa o campo explícito quando disponível, senão deriva
+  // do `modelo_cobranca`.
+  const tipoAtual: TipoNegociacao =
+    draft.tipo_negociacao ??
+    (draft.modelo_cobranca === "recorrente" ? "recorrente_executar" : "one_time");
+
+  // Itens efetivos do projeto (com fallback p/ produto_id legado).
+  const itensAtuais = itensDoProjeto(draft);
+
+  // Catálogo filtrado pelo grupo de categorias compatível com o tipo.
+  const categoriasGrupoDetail = categoriasDoTipo(tipoAtual);
+  const produtosDisponiveis = produtos.filter(
+    (p) => p.ativo && categoriasGrupoDetail.includes(p.categoria)
   );
 
-  function handleCategoriaChange(novaCat: CategoriaV4) {
-    setCategoriaSel(novaCat);
-    // Se o produto atual não pertence à nova categoria, limpa produto/variação.
-    if (draft.produto_id) {
-      const prodAtual = produtos.find((p) => p.id === draft.produto_id);
-      if (prodAtual && prodAtual.categoria !== novaCat) {
-        setDraft((d) =>
-          d ? { ...d, produto_id: "", variacao_id: undefined } : d
-        );
-      }
-    }
+  function aplicarItens(itens: ItemNegociacao[]) {
+    setDraft((d) => {
+      if (!d) return d;
+      const principal = itens[0];
+      return {
+        ...d,
+        itens,
+        produto_id: principal?.produto_id ?? "",
+        variacao_id: principal?.variacao_id,
+      };
+    });
   }
 
-  function handleProdutoChange(produtoId: string) {
-    setDraft((d) =>
-      d ? { ...d, produto_id: produtoId, variacao_id: undefined } : d
+  function adicionarProduto(produtoId: string) {
+    if (itensAtuais.some((it) => it.produto_id === produtoId)) return;
+    aplicarItens([
+      ...itensAtuais,
+      { id: uid("itp_"), produto_id: produtoId, variacao_id: undefined },
+    ]);
+  }
+
+  function removerProduto(itemId: string) {
+    aplicarItens(itensAtuais.filter((it) => it.id !== itemId));
+  }
+
+  function atualizarVariacao(itemId: string, variacaoId: string) {
+    aplicarItens(
+      itensAtuais.map((it) =>
+        it.id === itemId ? { ...it, variacao_id: variacaoId } : it
+      )
     );
+  }
+
+  function handleTipoChange(novoTipo: TipoNegociacao) {
+    const novoGrupo = categoriasDoTipo(novoTipo);
+    // Mantém apenas itens compatíveis com o novo grupo.
+    const itensCompat = itensAtuais.filter((it) => {
+      const prod = produtos.find((p) => p.id === it.produto_id);
+      return prod && novoGrupo.includes(prod.categoria);
+    });
+    setDraft((d) => {
+      if (!d) return d;
+      const novoModelo: Projeto["modelo_cobranca"] =
+        novoTipo === "recorrente_executar" ? "recorrente" : "one_time";
+      // Reajusta valor_total ao mudar o modelo (TCV é a verdade).
+      let novoValor = d.valor_total;
+      if (novoModelo === "recorrente" && d.valor_tcv && d.lt_meses) {
+        novoValor = d.valor_tcv / d.lt_meses;
+      } else if (novoModelo === "one_time") {
+        novoValor = d.valor_tcv ?? d.valor_total;
+      }
+      const principal = itensCompat[0];
+      return {
+        ...d,
+        tipo_negociacao: novoTipo,
+        modelo_cobranca: novoModelo,
+        valor_total: novoValor,
+        itens: itensCompat,
+        produto_id: principal?.produto_id ?? "",
+        variacao_id: principal?.variacao_id,
+      };
+    });
   }
 
   function pedirTrocaCliente() {
@@ -681,106 +746,113 @@ function DadosProjetoCard({
           )}
         </Field>
 
-        {/* Categoria */}
-        <Field label="Categoria V4">
-          <Select
-            value={categoriaSel || undefined}
-            onValueChange={(v) => handleCategoriaChange(v as CategoriaV4)}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder="Selecione a categoria" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORIAS.map((c) => (
-                <SelectItem key={c.value} value={c.value}>
-                  {c.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {/* Tipo da negociação */}
+        <Field label="Tipo da negociação" className="sm:col-span-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(["one_time", "recorrente_executar"] as TipoNegociacao[]).map(
+              (t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => handleTipoChange(t)}
+                  className={cn(
+                    "rounded-md border-2 p-2.5 text-left transition",
+                    tipoAtual === t
+                      ? t === "recorrente_executar"
+                        ? "border-executar bg-executar/5"
+                        : "border-ter bg-ter/5"
+                      : "border-border/60 hover:bg-muted/40"
+                  )}
+                >
+                  <p className="text-xs font-semibold text-foreground">
+                    {TIPO_NEGOCIACAO_LABEL[t]}
+                  </p>
+                </button>
+              )
+            )}
+          </div>
         </Field>
 
-        {/* Produto */}
-        <Field label="Produto" error={errors.produto_id}>
-          <Select
-            value={draft.produto_id || undefined}
-            onValueChange={handleProdutoChange}
-            disabled={!categoriaSel}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue
-                placeholder={
-                  categoriaSel
-                    ? produtosFiltrados.length === 0
-                      ? "Nenhum produto nesta categoria"
-                      : "Selecione"
-                    : "Defina a categoria primeiro"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {produtosFiltrados.length === 0 ? (
-                <div className="px-3 py-2 text-xs text-muted-foreground">
-                  Nenhum produto ativo nesta categoria.
-                </div>
-              ) : (
-                produtosFiltrados.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.nome}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        {/* Variação */}
-        {variacoesAtivas.length > 0 && (
-          <Field label="Variação" error={errors.variacao_id}>
-            <Select
-              value={draft.variacao_id || undefined}
-              onValueChange={(v) => setField("variacao_id", v || undefined)}
-            >
-              <SelectTrigger className="h-9 text-sm">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                {variacoesAtivas.map((v) => (
-                  <SelectItem key={v.id} value={v.id}>
-                    {v.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
-
-        {/* Modelo de cobrança — ao trocar, recompoe valor_total */}
-        <Field label="Modelo de cobrança">
-          <Select
-            value={draft.modelo_cobranca}
-            onValueChange={(v) => {
-              const novo = v as Projeto["modelo_cobranca"];
-              setDraft((d) => {
-                if (!d) return d;
-                let valorTotal = d.valor_total;
-                if (novo === "recorrente" && d.valor_tcv && d.lt_meses) {
-                  valorTotal = d.valor_tcv / d.lt_meses;
-                } else if (novo === "one_time") {
-                  valorTotal = d.valor_tcv ?? d.valor_total;
-                }
-                return { ...d, modelo_cobranca: novo, valor_total: valorTotal };
-              });
-            }}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recorrente">Recorrente</SelectItem>
-              <SelectItem value="one_time">One-time</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Produtos da negociação (lista + busca) */}
+        <Field
+          label="Produtos da negociação"
+          error={errors.itens}
+          className="sm:col-span-2"
+        >
+          <div className="space-y-2 rounded-md border border-border/60 bg-muted/30 p-2.5">
+            <SeletorProdutosBuscaDetail
+              produtos={produtosDisponiveis}
+              jaSelecionados={itensAtuais.map((it) => it.produto_id)}
+              onSelecionar={adicionarProduto}
+              placeholder={
+                tipoAtual === "recorrente_executar"
+                  ? "Buscar produto Executar..."
+                  : "Buscar produto Saber/Ter/Destrava/Potencializar..."
+              }
+            />
+            {itensAtuais.length === 0 ? (
+              <p className="text-[11px] italic text-muted-foreground">
+                Nenhum produto vinculado.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {itensAtuais.map((it) => {
+                  const prod = produtos.find((p) => p.id === it.produto_id);
+                  const variacoesItem = (prod?.variacoes ?? []).filter(
+                    (v) => v.ativo
+                  );
+                  return (
+                    <li
+                      key={it.id}
+                      className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-card px-2 py-1.5 text-xs"
+                    >
+                      {prod && (
+                        <Badge
+                          variant={variantCategoria(prod.categoria)}
+                          className="shrink-0 text-[9px]"
+                        >
+                          {CATEGORIAS.find((c) => c.value === prod.categoria)?.label}
+                        </Badge>
+                      )}
+                      <span className="font-medium text-foreground">
+                        {prod?.nome ?? "—"}
+                      </span>
+                      {variacoesItem.length > 0 && (
+                        <Select
+                          value={it.variacao_id || undefined}
+                          onValueChange={(v) => atualizarVariacao(it.id, v)}
+                        >
+                          <SelectTrigger className="h-7 w-auto min-w-[140px] text-[11px]">
+                            <SelectValue placeholder="Variação" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {variacoesItem.map((v) => (
+                              <SelectItem key={v.id} value={v.id}>
+                                {v.nome}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {errors[`item_${it.id}_variacao`] && (
+                        <span className="text-[10px] text-destructive">
+                          {errors[`item_${it.id}_variacao`]}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removerProduto(it.id)}
+                        className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        title="Remover produto"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </Field>
 
         {/* TCV — campo PRIMÁRIO do valor. valor_total deriva dele. */}
@@ -1120,6 +1192,96 @@ function DadosProjetoCard({
         </Field>
       </CardContent>
     </Card>
+  );
+}
+
+// Combobox simples para o detail: busca + lista filtrada.
+function SeletorProdutosBuscaDetail({
+  produtos,
+  jaSelecionados,
+  onSelecionar,
+  placeholder,
+}: {
+  produtos: Produto[];
+  jaSelecionados: string[];
+  onSelecionar: (produtoId: string) => void;
+  placeholder: string;
+}) {
+  const [busca, setBusca] = useState("");
+  const [aberto, setAberto] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(ev: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(ev.target as Node)) setAberto(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const disponiveis = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return produtos
+      .filter((p) => !jaSelecionados.includes(p.id))
+      .filter(
+        (p) =>
+          !q ||
+          p.nome.toLowerCase().includes(q) ||
+          (p.descricao ?? "").toLowerCase().includes(q)
+      )
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .slice(0, 30);
+  }, [produtos, jaSelecionados, busca]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={busca}
+          onChange={(e) => {
+            setBusca(e.target.value);
+            setAberto(true);
+          }}
+          onFocus={() => setAberto(true)}
+          placeholder={placeholder}
+          className="h-9 pl-8 text-sm"
+        />
+      </div>
+      {aberto && (
+        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+          {disponiveis.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              Nenhum produto disponível.
+            </p>
+          ) : (
+            <ul className="py-1">
+              {disponiveis.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelecionar(p.id);
+                      setBusca("");
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted"
+                  >
+                    <Badge
+                      variant={variantCategoria(p.categoria)}
+                      className="shrink-0 text-[9px]"
+                    >
+                      {CATEGORIAS.find((c) => c.value === p.categoria)?.label}
+                    </Badge>
+                    <span className="font-medium text-foreground">{p.nome}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -8,7 +8,9 @@ import {
   Link2,
   Loader2,
   Plus,
+  Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { useApp } from "@/store";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,10 +27,12 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  CATEGORIAS,
   CategoriaV4,
   Cliente,
   FormaPagamento,
   FORMAS_PAGAMENTO,
+  ItemNegociacao,
   MODELOS_VENDAS,
   ModeloVendas,
   Produto,
@@ -39,8 +43,17 @@ import {
   SEGMENTOS,
   Tier,
   TIERS,
+  TipoNegociacao,
 } from "@/types";
-import { formatCurrency, suggestSigla, uid } from "@/lib/utils";
+import {
+  categoriasDoTipo,
+  formatCurrency,
+  suggestSigla,
+  uid,
+  variantCategoria,
+  TIPO_NEGOCIACAO_LABEL,
+  TIPO_NEGOCIACAO_LABEL_CURTO,
+} from "@/lib/utils";
 import { cn } from "@/lib/utils";
 
 interface ContatoHandoff {
@@ -61,20 +74,27 @@ function contatoVazio(): ContatoHandoff {
   };
 }
 
-interface ItemVendido {
+// Uma negociação agrupa N produtos (mesma categoria-grupo) sob 1 forma de
+// pagamento e 1 tipo (one-time ou recorrente_executar). Cada negociação vira
+// 1 projeto na operação. O Handoff pode conter várias negociações que serão
+// agrupadas pelo `venda_id` (cards compartilham o sufixo `O{N}`).
+interface ItemProduto {
   id: string;
-  categoria: CategoriaV4 | "";
   produto_id: string;
   variacao_id: string;
-  projeto_nome: string;
-  modelo_cobranca: "recorrente" | "one_time";
-  valor_total: number;       // mensal (recorrente) ou total (one-time)
-  lt_meses: number;
-  // Campos de pagamento — alimentam o pagamento auto-gerado do projeto.
-  valor_tcv: number;                       // valor total do contrato
-  forma_pagamento: FormaPagamento | "";    // PIX / Boleto / Cheque / Cartão / Cartão Recorrente
-  num_parcelas: number;                    // 1 a 12
-  data_inicio_pagamento: string;           // yyyy-mm-dd
+}
+
+interface Negociacao {
+  id: string;
+  tipo: TipoNegociacao;
+  itens: ItemProduto[];
+  // Em one-time, é o valor cheio. Em recorrente_executar, é o TCV total
+  // (o valor mensal sai de TCV ÷ LT).
+  valor_total: number;
+  lt_meses: number;                       // só importa em recorrente_executar (6 ou 12)
+  forma_pagamento: FormaPagamento | "";
+  num_parcelas: number;                   // one-time: 1-12; executar: igual a lt_meses
+  data_inicio_pagamento: string;
 }
 
 interface FormState {
@@ -93,8 +113,8 @@ interface FormState {
   estado: string;
   contatos: ContatoHandoff[];
 
-  // Itens vendidos + datas comuns
-  itens: ItemVendido[];
+  // Negociações da venda + datas comuns
+  negociacoes: Negociacao[];
   data_assinatura: string;
   data_kickoff: string;
 
@@ -109,19 +129,15 @@ interface FormState {
   observacoes: string;
 }
 
-function itemVazio(): ItemVendido {
+function negociacaoVazia(tipo: TipoNegociacao = "one_time"): Negociacao {
   return {
-    id: uid("item_"),
-    categoria: "",
-    produto_id: "",
-    variacao_id: "",
-    projeto_nome: "",
-    modelo_cobranca: "recorrente",
+    id: uid("neg_"),
+    tipo,
+    itens: [],
     valor_total: 0,
-    lt_meses: 12,
-    valor_tcv: 0,
+    lt_meses: tipo === "recorrente_executar" ? 12 : 1,
     forma_pagamento: "",
-    num_parcelas: 12,
+    num_parcelas: tipo === "recorrente_executar" ? 12 : 1,
     data_inicio_pagamento: "",
   };
 }
@@ -142,7 +158,7 @@ function formInicial(): FormState {
     cidade: "",
     estado: "",
     contatos: [contatoVazio()],
-    itens: [itemVazio()],
+    negociacoes: [negociacaoVazia("one_time")],
     data_assinatura: hoje,
     data_kickoff: "",
     oportunidade_crm_url: "",
@@ -210,16 +226,33 @@ export function HandoffPage() {
       e.modelo_vendas = "Selecione ao menos um";
     if (!siglaAuto) e.nome_fantasia = "Não conseguimos gerar sigla — verifique o nome";
 
-    // Itens
-    if (form.itens.length === 0) e.itens = "Adicione ao menos um item";
-    form.itens.forEach((item, idx) => {
-      if (!item.categoria) e[`item_${idx}_categoria`] = "Selecione";
-      if (!item.produto_id) e[`item_${idx}_produto`] = "Selecione";
-      const prod = produtos.find((p) => p.id === item.produto_id);
-      const variacoes = (prod?.variacoes ?? []).filter((v) => v.ativo);
-      if (variacoes.length > 0 && !item.variacao_id)
-        e[`item_${idx}_variacao`] = "Selecione";
-      if (item.valor_total <= 0) e[`item_${idx}_valor`] = "> 0";
+    // Negociações
+    if (form.negociacoes.length === 0)
+      e.negociacoes = "Adicione ao menos uma negociação";
+    form.negociacoes.forEach((neg, idx) => {
+      if (neg.itens.length === 0)
+        e[`neg_${idx}_itens`] = "Adicione ao menos 1 produto";
+      // Garante que todos os produtos pertencem ao grupo correto
+      const grupo = categoriasDoTipo(neg.tipo);
+      const invalidos = neg.itens.filter((it) => {
+        const prod = produtos.find((p) => p.id === it.produto_id);
+        return !prod || !grupo.includes(prod.categoria);
+      });
+      if (invalidos.length > 0)
+        e[`neg_${idx}_itens`] = "Produto incompatível com o tipo da negociação";
+      // Variações obrigatórias quando o produto tem variação ativa
+      neg.itens.forEach((it) => {
+        const prod = produtos.find((p) => p.id === it.produto_id);
+        const ativas = (prod?.variacoes ?? []).filter((v) => v.ativo);
+        if (ativas.length > 0 && !it.variacao_id)
+          e[`neg_${idx}_item_${it.id}_variacao`] = "Selecione variação";
+      });
+      if (neg.valor_total <= 0) e[`neg_${idx}_valor`] = "> 0";
+      if (!neg.forma_pagamento) e[`neg_${idx}_forma`] = "Selecione";
+      if (neg.tipo === "recorrente_executar" && ![6, 12].includes(neg.lt_meses))
+        e[`neg_${idx}_lt`] = "Escolha 6 ou 12 meses";
+      if (neg.tipo === "one_time" && (neg.num_parcelas < 1 || neg.num_parcelas > 12))
+        e[`neg_${idx}_parcelas`] = "1 a 12";
     });
     return e;
   }
@@ -248,55 +281,79 @@ export function HandoffPage() {
     );
   }
 
-  // ---------- Itens ----------
-  function adicionarItem() {
-    setField("itens", [...form.itens, itemVazio()]);
+  // ---------- Negociações ----------
+  function adicionarNegociacao(tipo: TipoNegociacao) {
+    setField("negociacoes", [...form.negociacoes, negociacaoVazia(tipo)]);
   }
 
-  function removerItem(id: string) {
-    if (form.itens.length === 1) return; // não deixa zerar
-    setField("itens", form.itens.filter((i) => i.id !== id));
-  }
-
-  function atualizarItem(id: string, patch: Partial<ItemVendido>) {
+  function removerNegociacao(id: string) {
+    if (form.negociacoes.length === 1) return; // não deixa zerar
     setField(
-      "itens",
-      form.itens.map((i) => (i.id === id ? { ...i, ...patch } : i))
+      "negociacoes",
+      form.negociacoes.filter((n) => n.id !== id)
     );
   }
 
-  function escolherProdutoItem(itemId: string, produtoId: string) {
-    const prod = produtos.find((p) => p.id === produtoId);
-    const item = form.itens.find((i) => i.id === itemId);
-    const valorBase = prod?.valor_sugerido ?? 0;
-    const modelo = prod?.modelo_cobranca_padrao ?? "recorrente";
-    const ltDefault = item?.lt_meses || 12;
-    // TCV sugerido: em recorrente = valor mensal × LT; em one-time = próprio valor
-    const tcvSugerido =
-      modelo === "recorrente" ? valorBase * ltDefault : valorBase;
-    atualizarItem(itemId, {
-      produto_id: produtoId,
-      variacao_id: "",
-      modelo_cobranca: modelo,
-      valor_total: valorBase,
-      valor_tcv: tcvSugerido,
-      projeto_nome: prod?.nome ?? "",
-    });
+  function atualizarNegociacao(id: string, patch: Partial<Negociacao>) {
+    setField(
+      "negociacoes",
+      form.negociacoes.map((n) => {
+        if (n.id !== id) return n;
+        const atualizada = { ...n, ...patch };
+        // Em "executar", num_parcelas espelha lt_meses automaticamente.
+        if (atualizada.tipo === "recorrente_executar") {
+          atualizada.num_parcelas = atualizada.lt_meses;
+        }
+        return atualizada;
+      })
+    );
   }
 
-  function escolherVariacaoItem(itemId: string, variacaoId: string) {
-    const item = form.itens.find((i) => i.id === itemId);
-    const prod = produtos.find((p) => p.id === item?.produto_id);
-    const variacao = prod?.variacoes.find((v) => v.id === variacaoId);
-    const valorBase = variacao?.valor_sugerido ?? item?.valor_total ?? 0;
-    const ltDefault = item?.lt_meses || 12;
-    const tcvSugerido =
-      item?.modelo_cobranca === "recorrente" ? valorBase * ltDefault : valorBase;
-    atualizarItem(itemId, {
-      variacao_id: variacaoId,
-      valor_total: valorBase,
-      valor_tcv: tcvSugerido,
-    });
+  function adicionarProdutoNegociacao(negId: string, produtoId: string) {
+    setField(
+      "negociacoes",
+      form.negociacoes.map((n) => {
+        if (n.id !== negId) return n;
+        if (n.itens.some((it) => it.produto_id === produtoId)) return n;
+        return {
+          ...n,
+          itens: [
+            ...n.itens,
+            { id: uid("itp_"), produto_id: produtoId, variacao_id: "" },
+          ],
+        };
+      })
+    );
+  }
+
+  function atualizarVariacaoItem(
+    negId: string,
+    itemId: string,
+    variacaoId: string
+  ) {
+    setField(
+      "negociacoes",
+      form.negociacoes.map((n) => {
+        if (n.id !== negId) return n;
+        return {
+          ...n,
+          itens: n.itens.map((it) =>
+            it.id === itemId ? { ...it, variacao_id: variacaoId } : it
+          ),
+        };
+      })
+    );
+  }
+
+  function removerProdutoNegociacao(negId: string, itemId: string) {
+    setField(
+      "negociacoes",
+      form.negociacoes.map((n) =>
+        n.id === negId
+          ? { ...n, itens: n.itens.filter((it) => it.id !== itemId) }
+          : n
+      )
+    );
   }
 
   // ---------- Submit ----------
@@ -349,9 +406,12 @@ export function HandoffPage() {
       };
       saveCliente(cliente);
 
-      // Cria N projetos (um por item vendido). gerarCodigoProjeto incrementa
-      // automaticamente baseado em quantos já existem para esse cliente.
+      // Cria N projetos (um por negociação). Como o cliente é novo, a venda
+      // é a primeira (`venda_seq = 1`). As negociações compartilham o mesmo
+      // `venda_id` e recebem letras sequenciais A, B, C...
       const codigos: string[] = [];
+      const vendaId = uid("vnd_");
+      const vendaSeq = 1;
       const linksDocs = {
         oportunidade_crm_url: form.oportunidade_crm_url.trim() || undefined,
         whatsapp_grupo_url: form.whatsapp_grupo_url.trim() || undefined,
@@ -363,45 +423,56 @@ export function HandoffPage() {
           form.transcricao_plano_voo_url.trim() || undefined,
       };
 
-      for (let idx = 0; idx < form.itens.length; idx++) {
-        const item = form.itens[idx];
-        // codigo: como gerarCodigoProjeto lê do estado atual e ainda não
-        // refletiu os criados nessa rodada, construímos manualmente.
-        const seq = String(idx + 1).padStart(2, "0");
-        const codigo = `${siglaAuto}-${seq}`;
+      for (let idx = 0; idx < form.negociacoes.length; idx++) {
+        const neg = form.negociacoes[idx];
+        const letra = String.fromCharCode(65 + idx); // A, B, C...
+        const codigo = `${siglaAuto}-O${vendaSeq}-${letra}`;
         codigos.push(codigo);
 
-        // Calcula valor_total (mensal em recorrente, total em one-time)
-        // a partir do TCV se o operador preencheu o TCV.
-        const tcvEfetivo =
-          item.valor_tcv > 0
-            ? item.valor_tcv
-            : item.modelo_cobranca === "recorrente"
-            ? item.valor_total * (item.lt_meses || 0)
-            : item.valor_total;
+        // Cálculo dos valores:
+        // - One-time: valor_total = valor cheio digitado (TCV = mesmo valor).
+        // - Recorrente_executar: TCV digitado ÷ LT vira o valor mensal.
+        const tcv = neg.valor_total;
+        const modeloCobranca =
+          neg.tipo === "recorrente_executar" ? "recorrente" : "one_time";
         const valorBase =
-          item.modelo_cobranca === "recorrente" && item.lt_meses > 0
-            ? tcvEfetivo / item.lt_meses
-            : tcvEfetivo;
+          neg.tipo === "recorrente_executar" && neg.lt_meses > 0
+            ? tcv / neg.lt_meses
+            : tcv;
+
+        // Primeiro item populariza os campos legados (produto_id/variacao_id)
+        // para retrocompatibilidade com queries antigas.
+        const principal = neg.itens[0];
+        const projetoItens: ItemNegociacao[] = neg.itens.map((it) => ({
+          id: it.id,
+          produto_id: it.produto_id,
+          variacao_id: it.variacao_id || undefined,
+        }));
 
         const projeto: Projeto = {
           id: uid("prj_"),
           codigo,
           cliente_id: clienteId,
-          produto_id: item.produto_id,
-          variacao_id: item.variacao_id || undefined,
-          nome: item.projeto_nome.trim() || codigo,
-          modelo_cobranca: item.modelo_cobranca,
+          produto_id: principal?.produto_id ?? "",
+          variacao_id: principal?.variacao_id || undefined,
+          itens: projetoItens,
+          tipo_negociacao: neg.tipo,
+          venda_id: vendaId,
+          venda_seq: vendaSeq,
+          venda_letra: letra,
+          nome: codigo,
+          modelo_cobranca: modeloCobranca,
           valor_total: valorBase,
-          valor_tcv: tcvEfetivo > 0 ? tcvEfetivo : undefined,
-          forma_pagamento: item.forma_pagamento || undefined,
-          num_parcelas: item.num_parcelas || undefined,
-          data_inicio_pagamento: item.data_inicio_pagamento || undefined,
+          valor_tcv: tcv > 0 ? tcv : undefined,
+          forma_pagamento: neg.forma_pagamento || undefined,
+          num_parcelas: neg.num_parcelas || undefined,
+          data_inicio_pagamento: neg.data_inicio_pagamento || undefined,
           fase_atual: "inicio",
           data_assinatura: form.data_assinatura,
           data_inicio: form.data_assinatura,
           data_kickoff: form.data_kickoff || undefined,
-          lt_meses: item.lt_meses || undefined,
+          lt_meses:
+            neg.tipo === "recorrente_executar" ? neg.lt_meses : undefined,
           status: "ativo",
           saude_atual: "saudavel",
           links_rapidos: [],
@@ -412,7 +483,7 @@ export function HandoffPage() {
         saveProjeto(projeto);
       }
 
-      // Silencia gerarCodigoProjeto (não precisamos do retorno; usamos manual)
+      // Silencia gerarCodigoProjeto (não usamos aqui — geramos manualmente).
       void gerarCodigoProjeto;
 
       setCodigosCriados(codigos);
@@ -435,8 +506,9 @@ export function HandoffPage() {
     );
   }
 
-  const totalContrato = form.itens.reduce(
-    (acc, i) => acc + (Number.isFinite(i.valor_total) ? i.valor_total : 0),
+  // Soma do TCV de todas as negociações (one-time = valor cheio, executar = TCV).
+  const totalContrato = form.negociacoes.reduce(
+    (acc, n) => acc + (Number.isFinite(n.valor_total) ? n.valor_total : 0),
     0
   );
 
@@ -497,18 +569,19 @@ export function HandoffPage() {
               />
             </div>
 
-            {/* Coluna direita: itens vendidos + documentos */}
+            {/* Coluna direita: negociações + documentos */}
             <div className="space-y-4">
-              <StepItens
+              <StepNegociacoes
                 form={form}
                 erros={erros}
                 setField={setField}
                 produtos={produtos}
-                onUpdate={atualizarItem}
-                onAdd={adicionarItem}
-                onRemove={removerItem}
-                onChangeProduto={escolherProdutoItem}
-                onChangeVariacao={escolherVariacaoItem}
+                onUpdateNegociacao={atualizarNegociacao}
+                onAddNegociacao={adicionarNegociacao}
+                onRemoveNegociacao={removerNegociacao}
+                onAddProduto={adicionarProdutoNegociacao}
+                onRemoveProduto={removerProdutoNegociacao}
+                onUpdateVariacao={atualizarVariacaoItem}
                 totalContrato={totalContrato}
               />
 
@@ -871,29 +944,31 @@ function StepCliente({
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Step 2: Itens vendidos (N produtos)
+// Step 2: Negociações (1 venda → N negociações → N projetos)
 // ─────────────────────────────────────────────────────────────────────
-function StepItens({
+function StepNegociacoes({
   form,
   erros,
   setField,
   produtos,
-  onUpdate,
-  onAdd,
-  onRemove,
-  onChangeProduto,
-  onChangeVariacao,
+  onUpdateNegociacao,
+  onAddNegociacao,
+  onRemoveNegociacao,
+  onAddProduto,
+  onRemoveProduto,
+  onUpdateVariacao,
   totalContrato,
 }: {
   form: FormState;
   erros: Record<string, string>;
   setField: <K extends keyof FormState>(key: K, valor: FormState[K]) => void;
   produtos: Produto[];
-  onUpdate: (id: string, patch: Partial<ItemVendido>) => void;
-  onAdd: () => void;
-  onRemove: (id: string) => void;
-  onChangeProduto: (itemId: string, produtoId: string) => void;
-  onChangeVariacao: (itemId: string, variacaoId: string) => void;
+  onUpdateNegociacao: (id: string, patch: Partial<Negociacao>) => void;
+  onAddNegociacao: (tipo: TipoNegociacao) => void;
+  onRemoveNegociacao: (id: string) => void;
+  onAddProduto: (negId: string, produtoId: string) => void;
+  onRemoveProduto: (negId: string, itemId: string) => void;
+  onUpdateVariacao: (negId: string, itemId: string, variacaoId: string) => void;
   totalContrato: number;
 }) {
   const produtosAtivos = produtos.filter((p) => p.ativo);
@@ -902,14 +977,14 @@ function StepItens({
       <div>
         <div className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-ter" />
-          <h2 className="text-lg font-bold text-foreground">Itens vendidos</h2>
+          <h2 className="text-lg font-bold text-foreground">Negociações</h2>
           <Badge variant="outline" className="ml-auto font-mono text-[10px]">
             Total: {formatCurrency(totalContrato)}
           </Badge>
         </div>
         <p className="text-xs text-muted-foreground">
-          Cada item vira um projeto na operação. Adicione quantos produtos
-          fizerem parte do contrato.
+          Cada negociação tem 1 forma de pagamento e vira 1 card na operação.
+          Produtos de Executar ficam em negociação separada dos demais.
         </p>
       </div>
 
@@ -937,247 +1012,277 @@ function StepItens({
         </CardContent>
       </Card>
 
-      {/* Lista de itens */}
-      <div className="space-y-2">
-        {form.itens.map((item, idx) => (
-          <ItemRow
-            key={item.id}
-            item={item}
+      {/* Lista de negociações */}
+      <div className="space-y-3">
+        {form.negociacoes.map((neg, idx) => (
+          <NegociacaoCard
+            key={neg.id}
+            negociacao={neg}
             idx={idx}
             produtos={produtosAtivos}
             erros={erros}
-            onUpdate={onUpdate}
-            onRemove={onRemove}
-            onChangeProduto={onChangeProduto}
-            onChangeVariacao={onChangeVariacao}
-            podeRemover={form.itens.length > 1}
+            podeRemover={form.negociacoes.length > 1}
+            onUpdate={onUpdateNegociacao}
+            onRemove={onRemoveNegociacao}
+            onAddProduto={onAddProduto}
+            onRemoveProduto={onRemoveProduto}
+            onUpdateVariacao={onUpdateVariacao}
           />
         ))}
       </div>
 
-      <Button type="button" variant="outline" onClick={onAdd} className="w-full">
-        <Plus className="h-4 w-4" />
-        Adicionar outro produto / projeto
-      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onAddNegociacao("one_time")}
+          className="flex-1"
+        >
+          <Plus className="h-4 w-4" />
+          Negociação one-time (Saber/Ter/Destrava/Potencializar)
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onAddNegociacao("recorrente_executar")}
+          className="flex-1"
+        >
+          <Plus className="h-4 w-4" />
+          Negociação recorrente (Executar)
+        </Button>
+      </div>
 
-      {erros.itens && (
-        <p className="text-xs text-destructive">{erros.itens}</p>
+      {erros.negociacoes && (
+        <p className="text-xs text-destructive">{erros.negociacoes}</p>
       )}
     </div>
   );
 }
 
-function ItemRow({
-  item,
+function NegociacaoCard({
+  negociacao,
   idx,
   produtos,
   erros,
+  podeRemover,
   onUpdate,
   onRemove,
-  onChangeProduto,
-  onChangeVariacao,
-  podeRemover,
+  onAddProduto,
+  onRemoveProduto,
+  onUpdateVariacao,
 }: {
-  item: ItemVendido;
+  negociacao: Negociacao;
   idx: number;
   produtos: Produto[];
   erros: Record<string, string>;
-  onUpdate: (id: string, patch: Partial<ItemVendido>) => void;
-  onRemove: (id: string) => void;
-  onChangeProduto: (itemId: string, produtoId: string) => void;
-  onChangeVariacao: (itemId: string, variacaoId: string) => void;
   podeRemover: boolean;
+  onUpdate: (id: string, patch: Partial<Negociacao>) => void;
+  onRemove: (id: string) => void;
+  onAddProduto: (negId: string, produtoId: string) => void;
+  onRemoveProduto: (negId: string, itemId: string) => void;
+  onUpdateVariacao: (negId: string, itemId: string, variacaoId: string) => void;
 }) {
-  // Filtro tolerante a desalinhamento de case entre o dado armazenado e
-  // o valor do dropdown (defensivo, caso a sincronização antiga tenha
-  // salvo categoria em lowercase).
-  const produtosDaCategoria = produtos.filter(
-    (p) =>
-      item.categoria &&
-      (p.categoria ?? "").toString().toUpperCase() ===
-        item.categoria.toString().toUpperCase()
+  const isExecutar = negociacao.tipo === "recorrente_executar";
+  const categoriasGrupo = categoriasDoTipo(negociacao.tipo);
+  const produtosDisponiveis = produtos.filter((p) =>
+    categoriasGrupo.includes(p.categoria)
   );
-  const produtoSelecionado = produtos.find((p) => p.id === item.produto_id);
-  const variacoesAtivas = (produtoSelecionado?.variacoes ?? []).filter(
-    (v) => v.ativo
-  );
+  const valorParcela =
+    (negociacao.num_parcelas || 1) > 0
+      ? negociacao.valor_total / (negociacao.num_parcelas || 1)
+      : 0;
+  const valorMensal =
+    isExecutar && negociacao.lt_meses > 0
+      ? negociacao.valor_total / negociacao.lt_meses
+      : 0;
 
   return (
-    <Card>
+    <Card
+      className={cn(
+        "border-2",
+        isExecutar ? "border-executar/30" : "border-ter/30"
+      )}
+    >
       <CardContent className="space-y-3 p-3">
-        <div className="flex items-center justify-between">
-          <Badge variant="outline" className="font-mono text-[10px]">
-            Item {idx + 1}
-          </Badge>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={isExecutar ? "executar" : "ter"}
+              className="font-mono text-[10px]"
+            >
+              Negociação {String.fromCharCode(65 + idx)}
+            </Badge>
+            <span className="text-xs font-semibold text-foreground">
+              {TIPO_NEGOCIACAO_LABEL[negociacao.tipo]}
+            </span>
+          </div>
           {podeRemover && (
             <button
               type="button"
-              onClick={() => onRemove(item.id)}
+              onClick={() => onRemove(negociacao.id)}
               className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              title="Remover item"
+              title="Remover negociação"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Categoria *
-            </Label>
-            <Select
-              value={item.categoria}
-              onValueChange={(v) =>
-                onUpdate(item.id, {
-                  categoria: v as CategoriaV4,
-                  produto_id: "",
-                  variacao_id: "",
-                })
-              }
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Selecione" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="SABER">Saber</SelectItem>
-                <SelectItem value="TER">Ter</SelectItem>
-                <SelectItem value="EXECUTAR">Executar</SelectItem>
-                <SelectItem value="POTENCIALIZAR">Potencializar</SelectItem>
-                <SelectItem value="DESTRAVA_RECEITA">Destrava Receita</SelectItem>
-              </SelectContent>
-            </Select>
-            {erros[`item_${idx}_categoria`] && (
-              <p className="text-[10px] text-destructive">
-                {erros[`item_${idx}_categoria`]}
-              </p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Produto *
-            </Label>
-            <Select
-              value={item.produto_id}
-              onValueChange={(v) => onChangeProduto(item.id, v)}
-              disabled={!item.categoria}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue
-                  placeholder={item.categoria ? "Selecione" : "Categoria primeiro"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {produtosDaCategoria.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {erros[`item_${idx}_produto`] && (
-              <p className="text-[10px] text-destructive">
-                {erros[`item_${idx}_produto`]}
-              </p>
-            )}
-          </div>
-          {variacoesAtivas.length > 0 ? (
-            <div className="space-y-1">
-              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Variação *
-              </Label>
-              <Select
-                value={item.variacao_id}
-                onValueChange={(v) => onChangeVariacao(item.id, v)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {variacoesAtivas.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>
-                      {v.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {erros[`item_${idx}_variacao`] && (
-                <p className="text-[10px] text-destructive">
-                  {erros[`item_${idx}_variacao`]}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div />
+        {/* Produtos da negociação */}
+        <div className="space-y-2">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Produtos *
+          </Label>
+          <SeletorProdutos
+            produtos={produtosDisponiveis}
+            jaSelecionados={negociacao.itens.map((it) => it.produto_id)}
+            onSelecionar={(prodId) => onAddProduto(negociacao.id, prodId)}
+            placeholder={
+              isExecutar
+                ? "Buscar produto Executar..."
+                : "Buscar produto Saber/Ter/Destrava/Potencializar..."
+            }
+          />
+          {negociacao.itens.length === 0 && (
+            <p className="text-[11px] italic text-muted-foreground">
+              Nenhum produto adicionado.
+            </p>
+          )}
+          <ul className="space-y-1.5">
+            {negociacao.itens.map((it) => {
+              const prod = produtos.find((p) => p.id === it.produto_id);
+              const variacoesAtivas = (prod?.variacoes ?? []).filter(
+                (v) => v.ativo
+              );
+              return (
+                <li
+                  key={it.id}
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs"
+                >
+                  {prod && (
+                    <Badge
+                      variant={variantCategoria(prod.categoria)}
+                      className="shrink-0 text-[9px]"
+                    >
+                      {CATEGORIAS.find((c) => c.value === prod.categoria)?.label}
+                    </Badge>
+                  )}
+                  <span className="font-medium text-foreground">
+                    {prod?.nome ?? "—"}
+                  </span>
+                  {variacoesAtivas.length > 0 && (
+                    <Select
+                      value={it.variacao_id || undefined}
+                      onValueChange={(v) =>
+                        onUpdateVariacao(negociacao.id, it.id, v)
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-auto min-w-[140px] text-[11px]">
+                        <SelectValue placeholder="Variação" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {variacoesAtivas.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            {v.nome}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {erros[`neg_${idx}_item_${it.id}_variacao`] && (
+                    <span className="text-[10px] text-destructive">
+                      {erros[`neg_${idx}_item_${it.id}_variacao`]}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveProduto(negociacao.id, it.id)}
+                    className="ml-auto rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title="Remover produto"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {erros[`neg_${idx}_itens`] && (
+            <p className="text-[10px] text-destructive">
+              {erros[`neg_${idx}_itens`]}
+            </p>
           )}
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-4">
+        {/* Valor + LT */}
+        <div className="grid gap-2 sm:grid-cols-3">
           <div className="space-y-1 sm:col-span-2">
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Nome do projeto (opcional)
-            </Label>
-            <Input
-              value={item.projeto_nome}
-              onChange={(e) => onUpdate(item.id, { projeto_nome: e.target.value })}
-              placeholder={produtoSelecionado?.nome ?? "Ex: Mídia Q1 2026"}
-              className="h-9"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Cobrança
-            </Label>
-            <Select
-              value={item.modelo_cobranca}
-              onValueChange={(v) =>
-                onUpdate(item.id, {
-                  modelo_cobranca: v as "recorrente" | "one_time",
-                })
-              }
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="recorrente">Recorrente</SelectItem>
-                <SelectItem value="one_time">One-time</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              {item.modelo_cobranca === "recorrente"
+              {isExecutar
                 ? "TCV (valor total do contrato) *"
-                : "Valor total do projeto *"}
+                : "Valor total da negociação *"}
             </Label>
             <Input
               type="number"
               step="0.01"
-              value={item.valor_tcv || item.valor_total || ""}
+              value={negociacao.valor_total || ""}
               onChange={(e) =>
-                onUpdate(item.id, {
-                  valor_tcv: Number(e.target.value),
-                  // Em one-time, valor_total = TCV; em recorrente,
-                  // valor_total será recalculado no submit (TCV ÷ LT).
-                  valor_total:
-                    item.modelo_cobranca === "one_time"
-                      ? Number(e.target.value)
-                      : item.valor_total,
-                })
+                onUpdate(negociacao.id, { valor_total: Number(e.target.value) })
               }
               className="h-9"
+              placeholder={isExecutar ? "Ex: 60000" : "Soma cheia dos produtos"}
             />
-            {erros[`item_${idx}_valor`] && (
+            {erros[`neg_${idx}_valor`] && (
               <p className="text-[10px] text-destructive">
-                {erros[`item_${idx}_valor`]}
+                {erros[`neg_${idx}_valor`]}
               </p>
             )}
           </div>
+          {isExecutar && (
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Tempo (meses) *
+              </Label>
+              <div className="flex h-9 gap-1 rounded-md border border-input bg-background p-0.5">
+                {[6, 12].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => onUpdate(negociacao.id, { lt_meses: m })}
+                    className={cn(
+                      "flex-1 rounded text-xs font-medium transition",
+                      negociacao.lt_meses === m
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {m} meses
+                  </button>
+                ))}
+              </div>
+              {erros[`neg_${idx}_lt`] && (
+                <p className="text-[10px] text-destructive">
+                  {erros[`neg_${idx}_lt`]}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Bloco de pagamento — alimenta o pagamento auto-gerado do projeto */}
-        <div className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3">
+        {/* Valor mensal calculado (só executar) */}
+        {isExecutar && (
+          <div className="rounded-md border border-dashed border-executar/50 bg-executar/5 px-3 py-2 text-xs">
+            <span className="text-muted-foreground">Valor mensal: </span>
+            <span className="font-semibold tabular-nums text-foreground">
+              {formatCurrency(valorMensal)}
+            </span>
+            <span className="ml-2 text-muted-foreground">
+              ({formatCurrency(negociacao.valor_total)} ÷ {negociacao.lt_meses})
+            </span>
+          </div>
+        )}
+
+        {/* Plano de pagamento */}
+        <div className="rounded-md border border-border/60 bg-muted/30 p-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Plano de pagamento
           </p>
@@ -1188,21 +1293,25 @@ function ItemRow({
               </Label>
               <Input
                 type="date"
-                value={item.data_inicio_pagamento || ""}
+                value={negociacao.data_inicio_pagamento || ""}
                 onChange={(e) =>
-                  onUpdate(item.id, { data_inicio_pagamento: e.target.value })
+                  onUpdate(negociacao.id, {
+                    data_inicio_pagamento: e.target.value,
+                  })
                 }
                 className="h-9"
               />
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Forma de pagamento
+                Forma de pagamento *
               </Label>
               <Select
-                value={item.forma_pagamento || undefined}
+                value={negociacao.forma_pagamento || undefined}
                 onValueChange={(v) =>
-                  onUpdate(item.id, { forma_pagamento: v as FormaPagamento })
+                  onUpdate(negociacao.id, {
+                    forma_pagamento: v as FormaPagamento,
+                  })
                 }
               >
                 <SelectTrigger className="h-9">
@@ -1216,28 +1325,44 @@ function ItemRow({
                   ))}
                 </SelectContent>
               </Select>
+              {erros[`neg_${idx}_forma`] && (
+                <p className="text-[10px] text-destructive">
+                  {erros[`neg_${idx}_forma`]}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
                 Nº de parcelas
               </Label>
-              <Select
-                value={String(item.num_parcelas || 1)}
-                onValueChange={(v) =>
-                  onUpdate(item.id, { num_parcelas: parseInt(v, 10) })
-                }
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-                    <SelectItem key={n} value={String(n)}>
-                      {n}× {n === 1 ? "(à vista)" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {isExecutar ? (
+                <div className="flex h-9 items-center rounded-md border border-dashed border-border/60 bg-background px-3 text-xs text-muted-foreground">
+                  {negociacao.lt_meses}× (mensal)
+                </div>
+              ) : (
+                <Select
+                  value={String(negociacao.num_parcelas || 1)}
+                  onValueChange={(v) =>
+                    onUpdate(negociacao.id, { num_parcelas: parseInt(v, 10) })
+                  }
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}× {n === 1 ? "(à vista)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {erros[`neg_${idx}_parcelas`] && (
+                <p className="text-[10px] text-destructive">
+                  {erros[`neg_${idx}_parcelas`]}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -1245,16 +1370,7 @@ function ItemRow({
               </Label>
               <div className="flex h-9 items-center rounded-md border border-dashed border-border/60 bg-background px-3 text-xs">
                 <span className="font-semibold tabular-nums">
-                  {(() => {
-                    const tcv =
-                      item.valor_tcv > 0
-                        ? item.valor_tcv
-                        : item.modelo_cobranca === "recorrente"
-                        ? item.valor_total * (item.lt_meses || 0)
-                        : item.valor_total;
-                    const n = item.num_parcelas || 1;
-                    return formatCurrency(tcv > 0 ? tcv / n : 0);
-                  })()}
+                  {formatCurrency(isExecutar ? valorMensal : valorParcela)}
                 </span>
               </div>
             </div>
@@ -1262,6 +1378,106 @@ function ItemRow({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Combobox simples: input de busca + dropdown filtrado. Ao escolher,
+// chama onSelecionar. Esconde itens já selecionados.
+function SeletorProdutos({
+  produtos,
+  jaSelecionados,
+  onSelecionar,
+  placeholder,
+}: {
+  produtos: Produto[];
+  jaSelecionados: string[];
+  onSelecionar: (produtoId: string) => void;
+  placeholder: string;
+}) {
+  const [busca, setBusca] = useState("");
+  const [aberto, setAberto] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onDocClick(ev: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(ev.target as Node)) setAberto(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const disponiveis = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return produtos
+      .filter((p) => !jaSelecionados.includes(p.id))
+      .filter(
+        (p) =>
+          !q ||
+          p.nome.toLowerCase().includes(q) ||
+          (p.descricao ?? "").toLowerCase().includes(q)
+      )
+      .sort((a, b) => a.nome.localeCompare(b.nome))
+      .slice(0, 30);
+  }, [produtos, jaSelecionados, busca]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={busca}
+          onChange={(e) => {
+            setBusca(e.target.value);
+            setAberto(true);
+          }}
+          onFocus={() => setAberto(true)}
+          placeholder={placeholder}
+          className="h-9 pl-8 text-sm"
+        />
+      </div>
+      {aberto && (
+        <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
+          {disponiveis.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              Nenhum produto disponível.
+            </p>
+          ) : (
+            <ul className="py-1">
+              {disponiveis.map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelecionar(p.id);
+                      setBusca("");
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-muted"
+                  >
+                    <Badge
+                      variant={variantCategoria(p.categoria)}
+                      className="shrink-0 text-[9px]"
+                    >
+                      {TIPO_NEGOCIACAO_LABEL_CURTO[
+                        p.categoria === "EXECUTAR"
+                          ? "recorrente_executar"
+                          : "one_time"
+                      ]}
+                    </Badge>
+                    <span className="font-medium text-foreground">{p.nome}</span>
+                    {p.descricao && (
+                      <span className="truncate text-muted-foreground">
+                        · {p.descricao}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

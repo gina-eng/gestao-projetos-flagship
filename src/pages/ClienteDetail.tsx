@@ -27,7 +27,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
-import { formatCurrency, formatDate, nomeProduto, uid, variantCategoria } from "@/lib/utils";
+import {
+  categoriasDoProjeto,
+  formatCurrency,
+  formatDate,
+  produtosDoProjeto,
+  uid,
+  variantCategoria,
+} from "@/lib/utils";
 import {
   CATEGORIAS,
   type Cliente,
@@ -312,27 +319,35 @@ export function ClienteDetailPage() {
           ) : (
             <div className="space-y-2">
               {projetosCliente.map((p) => {
-                const produto = produtos.find((pr) => pr.id === p.produto_id);
+                const itensResolvidos = produtosDoProjeto(p, produtos);
+                const cats = categoriasDoProjeto(p, produtos);
+                const nomesProdutos = itensResolvidos
+                  .map(({ produto }) => produto?.nome ?? "—")
+                  .join(" · ");
                 return (
                   <Link
                     key={p.id}
                     to={`/projetos/${p.id}`}
                     className="flex flex-col gap-2 rounded-md border border-border/60 bg-card p-3 transition-colors hover:bg-muted/50 sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div className="flex items-center gap-3">
-                      {produto && (
-                        <Badge
-                          variant={variantCategoria(produto.categoria)}
-                        >
-                          {CATEGORIAS.find((c) => c.value === produto.categoria)?.label}
-                        </Badge>
-                      )}
+                    <div className="flex items-start gap-3">
+                      <div className="flex flex-wrap gap-1">
+                        {cats.length === 0 ? (
+                          <Badge variant="outline">—</Badge>
+                        ) : (
+                          cats.map((cat) => (
+                            <Badge key={cat} variant={variantCategoria(cat)}>
+                              {CATEGORIAS.find((c) => c.value === cat)?.label}
+                            </Badge>
+                          ))
+                        )}
+                      </div>
                       <div>
                         <p className="text-sm font-semibold text-foreground">
-                          {p.codigo} · {p.nome}
+                          {p.codigo}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {nomeProduto({ produto, variacao_id: p.variacao_id })} ·{" "}
+                          {nomesProdutos || "—"} ·{" "}
                           {fases.find((f) => f.id === p.fase_atual)?.nome ?? "—"} ·{" "}
                           {formatCurrency(p.valor_total)}
                           {p.modelo_cobranca === "recorrente" && "/mês"}

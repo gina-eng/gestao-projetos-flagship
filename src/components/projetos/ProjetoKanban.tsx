@@ -10,7 +10,14 @@ import {
   type FaseProjeto,
   type SaudeProjeto,
 } from "@/types";
-import { cn, formatCurrency, formatDate, variantCategoria } from "@/lib/utils";
+import {
+  categoriasDoProjeto,
+  cn,
+  formatCurrency,
+  formatDate,
+  produtosDoProjeto,
+  variantCategoria,
+} from "@/lib/utils";
 
 const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "critico"> = {
   saudavel: "saudavel",
@@ -101,11 +108,14 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
                 ) : (
                   cards.map((p) => {
                     const cliente = clientes.find((c) => c.id === p.cliente_id);
-                    const produto = produtos.find((pr) => pr.id === p.produto_id);
+                    const itensResolvidos = produtosDoProjeto(p, produtos);
+                    const categorias = categoriasDoProjeto(p, produtos);
                     const principal = p.squad.find((s) => s.principal);
                     const invPrincipal = investidores.find(
                       (i) => i.id === principal?.investidor_id
                     );
+                    const itensVisiveis = itensResolvidos.slice(0, 3);
+                    const restantes = itensResolvidos.length - itensVisiveis.length;
                     return (
                       <Link
                         key={p.id}
@@ -123,32 +133,62 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
                             <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                               {p.codigo}
                             </span>
-                            <span className={cn("h-2 w-2 rounded-full", saudeDot[p.saude_atual])} title={SAUDE_LABEL[p.saude_atual]} />
+                            <span
+                              className={cn(
+                                "h-2 w-2 rounded-full",
+                                saudeDot[p.saude_atual]
+                              )}
+                              title={SAUDE_LABEL[p.saude_atual]}
+                            />
                           </div>
+                          {/* Título grande: cliente. Subtítulo fino: produtos. */}
                           <p className="text-sm font-semibold leading-tight text-foreground">
-                            {cliente?.nome_fantasia ?? p.nome}
+                            {cliente?.nome_fantasia ?? "—"}
                           </p>
-                          {cliente && (
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {p.nome}
-                            </p>
+                          {itensVisiveis.length > 0 ? (
+                            <ul className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                              {itensVisiveis.map(({ item, produto }) => (
+                                <li key={item.id} className="truncate">
+                                  • {produto?.nome ?? "—"}
+                                </li>
+                              ))}
+                              {restantes > 0 && (
+                                <li className="text-[10px] italic">
+                                  +{restantes} produto{restantes === 1 ? "" : "s"}
+                                </li>
+                              )}
+                            </ul>
+                          ) : (
+                            <p className="mt-0.5 text-xs text-muted-foreground">—</p>
                           )}
 
                           <div className="mt-2 flex items-center justify-between gap-2">
-                            {produto ? (
-                              <Badge
-                                variant={variantCategoria(produto.categoria)}
-                                className="text-[9px]"
-                              >
-                                {CATEGORIAS.find((c) => c.value === produto.categoria)?.label}
-                              </Badge>
-                            ) : (
-                              <span className="text-[9px] text-muted-foreground">—</span>
-                            )}
+                            <div className="flex flex-wrap gap-1">
+                              {categorias.length === 0 ? (
+                                <span className="text-[9px] text-muted-foreground">—</span>
+                              ) : (
+                                categorias.slice(0, 2).map((cat) => (
+                                  <Badge
+                                    key={cat}
+                                    variant={variantCategoria(cat)}
+                                    className="text-[9px]"
+                                  >
+                                    {CATEGORIAS.find((c) => c.value === cat)?.label}
+                                  </Badge>
+                                ))
+                              )}
+                              {categorias.length > 2 && (
+                                <span className="text-[9px] text-muted-foreground">
+                                  +{categorias.length - 2}
+                                </span>
+                              )}
+                            </div>
                             <span className="text-xs font-semibold tabular-nums text-foreground">
                               {formatCurrency(p.valor_total)}
                               {p.modelo_cobranca === "recorrente" && (
-                                <span className="font-normal text-muted-foreground">/mês</span>
+                                <span className="font-normal text-muted-foreground">
+                                  /mês
+                                </span>
                               )}
                             </span>
                           </div>

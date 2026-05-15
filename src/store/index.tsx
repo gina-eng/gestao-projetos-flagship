@@ -101,7 +101,15 @@ interface AppActions {
   recuperarRegistro: (registroId: string) => Promise<string | null>;
 }
 
-type AppContextValue = AppState & AppActions & { gerarCodigoProjeto: (clienteId: string) => string };
+type AppContextValue = AppState &
+  AppActions & {
+    // Gera um código completo "fresh" para uma nova venda do cliente.
+    // Retorna `{ codigo, vendaSeq, vendaLetra }` para que o caller possa
+    // popular também os campos `venda_seq`/`venda_letra` do Projeto.
+    gerarCodigoProjeto: (clienteId: string) => string;
+    proximaVendaSeq: (clienteId: string) => number;
+    proximaLetraDaVenda: (clienteId: string, vendaSeq: number) => string;
+  };
 
 const AppCtx = createContext<AppContextValue | null>(null);
 
@@ -1304,15 +1312,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.fases, state.sessao, persistirAudit]
   );
 
+  // Próximo sequencial de venda dentro do cliente. Olha o maior `venda_seq`
+  // já usado em projetos do mesmo cliente e retorna +1. Para clientes sem
+  // venda registrada ainda, retorna 1. Projetos legados (sem `venda_seq`)
+  // são ignorados na contagem — o sufixo `O{N}` é exclusivo do novo formato.
+  const proximaVendaSeq = useCallback(
+    (clienteId: string): number => {
+      const seqs = state.projetos
+        .filter((p) => p.cliente_id === clienteId && typeof p.venda_seq === "number")
+        .map((p) => p.venda_seq as number);
+      if (seqs.length === 0) return 1;
+      return Math.max(...seqs) + 1;
+    },
+    [state.projetos]
+  );
+
+  // Próxima letra disponível dentro de uma venda específica. Considera
+  // letras já usadas (case-insensitive) e retorna a próxima A→Z.
+  const proximaLetraDaVenda = useCallback(
+    (clienteId: string, vendaSeq: number): string => {
+      const usadas = new Set(
+        state.projetos
+          .filter(
+            (p) =>
+              p.cliente_id === clienteId &&
+              p.venda_seq === vendaSeq &&
+              typeof p.venda_letra === "string"
+          )
+          .map((p) => (p.venda_letra as string).toUpperCase())
+      );
+      for (let code = 65; code <= 90; code++) {
+        const letra = String.fromCharCode(code);
+        if (!usadas.has(letra)) return letra;
+      }
+      return "Z"; // fallback se ultrapassar 26 negociações na mesma venda
+    },
+    [state.projetos]
+  );
+
   const gerarCodigoProjeto = useCallback(
     (clienteId: string): string => {
       const cli = state.clientes.find((c) => c.id === clienteId);
-      if (!cli) return "PROJ-00";
-      const existentes = state.projetos.filter((p) => p.cliente_id === clienteId).length;
-      const seq = String(existentes + 1).padStart(2, "0");
-      return `${cli.sigla}-${seq}`;
+      if (!cli) return "PROJ-O1-A";
+      const seq = proximaVendaSeq(clienteId);
+      return `${cli.sigla}-O${seq}-A`;
     },
-    [state.clientes, state.projetos]
+    [state.clientes, proximaVendaSeq]
   );
 
   // ----- OPORTUNIDADE -----
@@ -1581,6 +1626,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       moveOportunidadeEtapa,
       sincronizarTodosPagamentos,
       gerarCodigoProjeto,
+      proximaVendaSeq,
+      proximaLetraDaVenda,
       recuperarRegistro,
     }),
     [
@@ -1609,6 +1656,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       moveOportunidadeEtapa,
       sincronizarTodosPagamentos,
       gerarCodigoProjeto,
+      proximaVendaSeq,
+      proximaLetraDaVenda,
       recuperarRegistro,
     ]
   );

@@ -20,7 +20,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/Layout";
-import { formatCurrency, formatDate, variantCategoria } from "@/lib/utils";
+import {
+  categoriasDoProjeto,
+  formatCurrency,
+  formatDate,
+  produtosDoProjeto,
+  variantCategoria,
+} from "@/lib/utils";
 import {
   CATEGORIAS,
   MODELOS_VENDAS,
@@ -40,9 +46,11 @@ export function DashboardPage() {
   const { clientes, projetos, pagamentos, produtos, fases, sessao } = useApp();
 
   const projetosAtivos = projetos.filter((p) => p.status === "ativo");
-  const produtoDe = (projetoId: string) => {
+  // Categorias presentes em um projeto (set, pode ter mais de uma).
+  const categoriasDe = (projetoId: string) => {
     const p = projetos.find((x) => x.id === projetoId);
-    return p ? produtos.find((pr) => pr.id === p.produto_id) : undefined;
+    if (!p) return [] as string[];
+    return categoriasDoProjeto(p, produtos);
   };
 
   // Receita do mês: soma das parcelas com vencimento no mês corrente,
@@ -109,7 +117,9 @@ export function DashboardPage() {
     }));
 
   const projetosPorCategoria = CATEGORIAS.map((cat) => {
-    const list = projetosAtivos.filter((p) => produtoDe(p.id)?.categoria === cat.value);
+    const list = projetosAtivos.filter((p) =>
+      categoriasDe(p.id).includes(cat.value)
+    );
     return {
       ...cat,
       count: list.length,
@@ -435,21 +445,32 @@ export function DashboardPage() {
             {projetosAtivos
               .filter((p) => p.saude_atual === "critico" || p.saude_atual === "cuidado")
               .slice(0, 4)
-              .map((p) => (
-                <Link
-                  key={p.id}
-                  to={`/projetos/${p.id}`}
-                  className="flex items-center justify-between rounded-md border border-border/60 bg-card px-3 py-2 transition-colors hover:bg-muted"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{p.codigo} · {p.nome}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {clientes.find((c) => c.id === p.cliente_id)?.nome_fantasia}
-                    </p>
-                  </div>
-                  <Badge variant={saudeVariant[p.saude_atual]}>{SAUDE_LABEL[p.saude_atual]}</Badge>
-                </Link>
-              ))}
+              .map((p) => {
+                const cliente = clientes.find((c) => c.id === p.cliente_id);
+                const itens = produtosDoProjeto(p, produtos);
+                const nomesProdutos = itens
+                  .map(({ produto }) => produto?.nome ?? "—")
+                  .join(" · ");
+                return (
+                  <Link
+                    key={p.id}
+                    to={`/projetos/${p.id}`}
+                    className="flex items-center justify-between rounded-md border border-border/60 bg-card px-3 py-2 transition-colors hover:bg-muted"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {p.codigo} · {cliente?.nome_fantasia ?? "—"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {nomesProdutos || "—"}
+                      </p>
+                    </div>
+                    <Badge variant={saudeVariant[p.saude_atual]}>
+                      {SAUDE_LABEL[p.saude_atual]}
+                    </Badge>
+                  </Link>
+                );
+              })}
 
             {parcelasAtrasadas.length === 0 &&
               !projetosAtivos.some(
