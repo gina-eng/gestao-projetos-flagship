@@ -258,10 +258,19 @@ create table if not exists public.pagamentos (
   periodicidade text not null check (periodicidade in ('mensal','trimestral','unica','personalizada')),
   status_geral text not null default 'ativo' check (status_geral in ('ativo','concluido','cancelado')),
   observacoes text,
+  -- Pagamento "espelho" do projeto: sincronizado automaticamente a partir
+  -- dos campos valor_tcv + num_parcelas + forma_pagamento + data_inicio_pagamento.
+  -- Quando true, é gerenciado pelo sistema e regenerado a cada save do projeto
+  -- (preservando parcelas pagas).
+  auto_gerado boolean not null default false,
   criado_em timestamptz not null default now()
 );
 
 create index if not exists idx_pagamentos_projeto on public.pagamentos(projeto_id);
+
+-- Migração idempotente: garante a coluna em bancos pré-existentes.
+alter table public.pagamentos
+  add column if not exists auto_gerado boolean not null default false;
 
 -- Parcelas dos pagamentos
 create table if not exists public.parcelas (

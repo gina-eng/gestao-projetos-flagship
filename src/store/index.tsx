@@ -440,6 +440,114 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // ─── Sincroniza Pagamento "espelho" a partir do projeto ───────────────
+  // Quando o projeto tem TCV + num_parcelas + data_inicio_pagamento +
+  // forma_pagamento configurados, gera/atualiza um Pagamento auto-gerado
+  // com a régua de parcelas derivada. Preserva parcelas já pagas pra não
+  // perder histórico financeiro.
+  const syncPagamentoAutoDoProjeto = useCallback(
+    async (projeto: Projeto) => {
+      const tem =
+        !!projeto.valor_tcv &&
+        projeto.valor_tcv > 0 &&
+        !!projeto.num_parcelas &&
+        projeto.num_parcelas > 0 &&
+        !!projeto.data_inicio_pagamento;
+
+      // Procura o pagamento auto-gerado já existente desse projeto.
+      const existente = state.pagamentos.find(
+        (pg) => pg.projeto_id === projeto.id && pg.auto_gerado
+      );
+
+      // Sem dados completos → não cria; se já existe, mantém como está
+      // (pode ter parcelas pagas que valem rastrear).
+      if (!tem) return;
+
+      // Mapeia forma de pagamento (acordo) → método (registro do pagamento).
+      const metodoMap: Record<string, Pagamento["metodo"]> = {
+        pix: "pix",
+        boleto: "boleto",
+        cheque: "outro",
+        cartao: "cartao_credito",
+        cartao_recorrente: "cartao_credito",
+      };
+      const metodo: Pagamento["metodo"] = projeto.forma_pagamento
+        ? metodoMap[projeto.forma_pagamento] ?? "outro"
+        : "outro";
+
+      const valorParcela = projeto.valor_tcv! / projeto.num_parcelas!;
+      const baseData = new Date(projeto.data_inicio_pagamento! + "T00:00:00");
+
+      // Reaproveita parcelas pagas (mesmo número) pra preservar comprovantes.
+      const pagasExistentes = (existente?.parcelas ?? []).filter(
+        (par) => par.status === "pago"
+      );
+      const pagasPorNumero = new Map(pagasExistentes.map((p) => [p.numero, p]));
+
+      const novasParcelas: Parcela[] = Array.from(
+        { length: projeto.num_parcelas! },
+        (_, i) => {
+          const numero = i + 1;
+          const reuso = pagasPorNumero.get(numero);
+          if (reuso) return reuso; // preserva pago
+          const d = new Date(baseData);
+          d.setMonth(d.getMonth() + i);
+          return {
+            id: uid("par_"),
+            pagamento_id: existente?.id ?? "tmp",
+            numero,
+            valor: valorParcela,
+            data_vencimento: d.toISOString().slice(0, 10),
+            status: "previsto" as const,
+          };
+        }
+      );
+
+      const tipo: Pagamento["tipo"] =
+        projeto.modelo_cobranca === "recorrente"
+          ? "recorrente"
+          : projeto.num_parcelas! > 1
+          ? "parcelado"
+          : "entrada";
+
+      const pagId = existente?.id ?? uid("pag_");
+      // Sincroniza pagamento_id em todas as parcelas.
+      const parcelasFinais = novasParcelas.map((p) => ({
+        ...p,
+        pagamento_id: pagId,
+      }));
+
+      const novoPag: Pagamento = {
+        id: pagId,
+        projeto_id: projeto.id,
+        tipo,
+        metodo,
+        valor_total: projeto.valor_tcv!,
+        num_parcelas: projeto.num_parcelas!,
+        data_primeira_parcela: projeto.data_inicio_pagamento!,
+        periodicidade: "mensal",
+        status_geral: "ativo",
+        observacoes: "[Auto] Sincronizado com o projeto",
+        auto_gerado: true,
+        parcelas: parcelasFinais,
+      };
+
+      try {
+        await api.upsertPagamento(novoPag);
+      } catch (err) {
+        console.error("[syncPagamentoAutoDoProjeto] falha:", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        pagamentos: existente
+          ? s.pagamentos.map((pg) => (pg.id === pagId ? novoPag : pg))
+          : [novoPag, ...s.pagamentos],
+      }));
+    },
+    [state.pagamentos]
+  );
+
   // ─── Helper para persistir auditoria (best-effort) ───────────────────
   // Falha silenciosa: log no console mas não interrompe o fluxo. Auditoria
   // é importante, mas não bloqueia operações de negócio.
@@ -806,8 +914,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (existing && existing.cliente_id !== projeto.cliente_id) {
         await reavaliarStatusCliente(existing.cliente_id, projetosAtualizados, state.clientes);
       }
+      // Sincroniza o pagamento espelho do projeto (cria/atualiza régua de
+      // parcelas conforme TCV + parcelas + data_inicio_pagamento).
+      await syncPagamentoAutoDoProjeto(projeto);
     },
-    [state.projetos, state.fases, state.sessao, state.clientes, persistirAudit, reavaliarStatusCliente]
+    [
+      state.projetos,
+      state.fases,
+      state.sessao,
+      state.clientes,
+      persistirAudit,
+      reavaliarStatusCliente,
+      syncPagamentoAutoDoProjeto,
+    ]
   );
 
   // Soft delete: marca como concluído (preserva projeto + pagamentos +

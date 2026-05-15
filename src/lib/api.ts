@@ -549,6 +549,7 @@ function rowToPagamento(r: Record<string, unknown>): Pagamento {
     periodicidade: r.periodicidade as Pagamento["periodicidade"],
     status_geral: r.status_geral as Pagamento["status_geral"],
     observacoes: (r.observacoes as string) ?? undefined,
+    auto_gerado: Boolean(r.auto_gerado),
     parcelas: parcelasRows
       .sort((a, b) => ((a.numero as number) ?? 0) - ((b.numero as number) ?? 0))
       .map(
@@ -580,6 +581,7 @@ export async function upsertPagamento(p: Pagamento): Promise<void> {
     periodicidade: p.periodicidade,
     status_geral: p.status_geral,
     observacoes: p.observacoes ?? null,
+    auto_gerado: p.auto_gerado ?? false,
   });
   throwIfError(errPag);
 

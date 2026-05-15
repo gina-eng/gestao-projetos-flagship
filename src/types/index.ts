@@ -410,6 +410,10 @@ export interface Pagamento {
   periodicidade: Periodicidade;
   status_geral: StatusPagamento;
   observacoes?: string;
+  // Pagamento auto-gerado a partir dos campos de pagamento do projeto.
+  // Quando true, é regenerado automaticamente em todo saveProjeto
+  // (preservando parcelas já pagas).
+  auto_gerado?: boolean;
   parcelas: Parcela[];
 }
 

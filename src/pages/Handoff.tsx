@@ -27,6 +27,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   CategoriaV4,
   Cliente,
+  FormaPagamento,
+  FORMAS_PAGAMENTO,
   MODELOS_VENDAS,
   ModeloVendas,
   Produto,
@@ -66,8 +68,13 @@ interface ItemVendido {
   variacao_id: string;
   projeto_nome: string;
   modelo_cobranca: "recorrente" | "one_time";
-  valor_total: number;
+  valor_total: number;       // mensal (recorrente) ou total (one-time)
   lt_meses: number;
+  // Campos de pagamento — alimentam o pagamento auto-gerado do projeto.
+  valor_tcv: number;                       // valor total do contrato
+  forma_pagamento: FormaPagamento | "";    // PIX / Boleto / Cheque / Cartão / Cartão Recorrente
+  num_parcelas: number;                    // 1 a 12
+  data_inicio_pagamento: string;           // yyyy-mm-dd
 }
 
 interface FormState {
@@ -112,6 +119,10 @@ function itemVazio(): ItemVendido {
     modelo_cobranca: "recorrente",
     valor_total: 0,
     lt_meses: 12,
+    valor_tcv: 0,
+    forma_pagamento: "",
+    num_parcelas: 12,
+    data_inicio_pagamento: "",
   };
 }
 
@@ -256,11 +267,19 @@ export function HandoffPage() {
 
   function escolherProdutoItem(itemId: string, produtoId: string) {
     const prod = produtos.find((p) => p.id === produtoId);
+    const item = form.itens.find((i) => i.id === itemId);
+    const valorBase = prod?.valor_sugerido ?? 0;
+    const modelo = prod?.modelo_cobranca_padrao ?? "recorrente";
+    const ltDefault = item?.lt_meses || 12;
+    // TCV sugerido: em recorrente = valor mensal × LT; em one-time = próprio valor
+    const tcvSugerido =
+      modelo === "recorrente" ? valorBase * ltDefault : valorBase;
     atualizarItem(itemId, {
       produto_id: produtoId,
       variacao_id: "",
-      modelo_cobranca: prod?.modelo_cobranca_padrao ?? "recorrente",
-      valor_total: prod?.valor_sugerido ?? 0,
+      modelo_cobranca: modelo,
+      valor_total: valorBase,
+      valor_tcv: tcvSugerido,
       projeto_nome: prod?.nome ?? "",
     });
   }
@@ -269,9 +288,14 @@ export function HandoffPage() {
     const item = form.itens.find((i) => i.id === itemId);
     const prod = produtos.find((p) => p.id === item?.produto_id);
     const variacao = prod?.variacoes.find((v) => v.id === variacaoId);
+    const valorBase = variacao?.valor_sugerido ?? item?.valor_total ?? 0;
+    const ltDefault = item?.lt_meses || 12;
+    const tcvSugerido =
+      item?.modelo_cobranca === "recorrente" ? valorBase * ltDefault : valorBase;
     atualizarItem(itemId, {
       variacao_id: variacaoId,
-      valor_total: variacao?.valor_sugerido ?? item?.valor_total ?? 0,
+      valor_total: valorBase,
+      valor_tcv: tcvSugerido,
     });
   }
 
@@ -347,6 +371,19 @@ export function HandoffPage() {
         const codigo = `${siglaAuto}-${seq}`;
         codigos.push(codigo);
 
+        // Calcula valor_total (mensal em recorrente, total em one-time)
+        // a partir do TCV se o operador preencheu o TCV.
+        const tcvEfetivo =
+          item.valor_tcv > 0
+            ? item.valor_tcv
+            : item.modelo_cobranca === "recorrente"
+            ? item.valor_total * (item.lt_meses || 0)
+            : item.valor_total;
+        const valorBase =
+          item.modelo_cobranca === "recorrente" && item.lt_meses > 0
+            ? tcvEfetivo / item.lt_meses
+            : tcvEfetivo;
+
         const projeto: Projeto = {
           id: uid("prj_"),
           codigo,
@@ -355,7 +392,11 @@ export function HandoffPage() {
           variacao_id: item.variacao_id || undefined,
           nome: item.projeto_nome.trim() || codigo,
           modelo_cobranca: item.modelo_cobranca,
-          valor_total: item.valor_total,
+          valor_total: valorBase,
+          valor_tcv: tcvEfetivo > 0 ? tcvEfetivo : undefined,
+          forma_pagamento: item.forma_pagamento || undefined,
+          num_parcelas: item.num_parcelas || undefined,
+          data_inicio_pagamento: item.data_inicio_pagamento || undefined,
           fase_atual: "inicio",
           data_assinatura: form.data_assinatura,
           data_inicio: form.data_assinatura,
@@ -1106,14 +1147,24 @@ function ItemRow({
           </div>
           <div className="space-y-1">
             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Valor {item.modelo_cobranca === "recorrente" ? "mês" : "total"} *
+              {item.modelo_cobranca === "recorrente"
+                ? "TCV (valor total do contrato) *"
+                : "Valor total do projeto *"}
             </Label>
             <Input
               type="number"
               step="0.01"
-              value={item.valor_total || ""}
+              value={item.valor_tcv || item.valor_total || ""}
               onChange={(e) =>
-                onUpdate(item.id, { valor_total: Number(e.target.value) })
+                onUpdate(item.id, {
+                  valor_tcv: Number(e.target.value),
+                  // Em one-time, valor_total = TCV; em recorrente,
+                  // valor_total será recalculado no submit (TCV ÷ LT).
+                  valor_total:
+                    item.modelo_cobranca === "one_time"
+                      ? Number(e.target.value)
+                      : item.valor_total,
+                })
               }
               className="h-9"
             />
@@ -1122,6 +1173,91 @@ function ItemRow({
                 {erros[`item_${idx}_valor`]}
               </p>
             )}
+          </div>
+        </div>
+
+        {/* Bloco de pagamento — alimenta o pagamento auto-gerado do projeto */}
+        <div className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Plano de pagamento
+          </p>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Início do pagamento
+              </Label>
+              <Input
+                type="date"
+                value={item.data_inicio_pagamento || ""}
+                onChange={(e) =>
+                  onUpdate(item.id, { data_inicio_pagamento: e.target.value })
+                }
+                className="h-9"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Forma de pagamento
+              </Label>
+              <Select
+                value={item.forma_pagamento || undefined}
+                onValueChange={(v) =>
+                  onUpdate(item.id, { forma_pagamento: v as FormaPagamento })
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FORMAS_PAGAMENTO.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Nº de parcelas
+              </Label>
+              <Select
+                value={String(item.num_parcelas || 1)}
+                onValueChange={(v) =>
+                  onUpdate(item.id, { num_parcelas: parseInt(v, 10) })
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}× {n === 1 ? "(à vista)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Valor da parcela
+              </Label>
+              <div className="flex h-9 items-center rounded-md border border-dashed border-border/60 bg-background px-3 text-xs">
+                <span className="font-semibold tabular-nums">
+                  {(() => {
+                    const tcv =
+                      item.valor_tcv > 0
+                        ? item.valor_tcv
+                        : item.modelo_cobranca === "recorrente"
+                        ? item.valor_total * (item.lt_meses || 0)
+                        : item.valor_total;
+                    const n = item.num_parcelas || 1;
+                    return formatCurrency(tcv > 0 ? tcv / n : 0);
+                  })()}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </CardContent>
