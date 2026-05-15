@@ -91,6 +91,10 @@ interface AppActions {
   deleteOportunidade: (id: string) => Promise<void>;
   moveOportunidadeEtapa: (id: string, etapa: Oportunidade["etapa"]) => Promise<void>;
 
+  // Roda a sincronização de pagamento auto-gerado em todos os projetos
+  // que têm os dados completos (TCV + parcelas + data início pagamento).
+  sincronizarTodosPagamentos: () => Promise<{ sincronizados: number; pulados: number }>;
+
   // Recupera uma entidade a partir de um registro de auditoria de remoção
   // (volta status pra 'ativo'). Retorna mensagem de erro em string ou null
   // se OK.
@@ -534,8 +538,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       try {
         await api.upsertPagamento(novoPag);
+        console.log("[sync] pagamento espelho atualizado:", {
+          projeto: projeto.codigo,
+          valor_tcv: projeto.valor_tcv,
+          num_parcelas: projeto.num_parcelas,
+          data_inicio: projeto.data_inicio_pagamento,
+          parcelas: parcelasFinais.length,
+        });
       } catch (err) {
-        console.error("[syncPagamentoAutoDoProjeto] falha:", err);
+        // Erro mais visível — geralmente coluna 'auto_gerado' ausente no
+        // banco ou problema de RLS.
+        notificarErro("sincronizar financeiro do projeto", err);
         return;
       }
       setState((s) => ({
@@ -547,6 +560,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [state.pagamentos]
   );
+
+  // Sincroniza TODOS os projetos com dados de pagamento contra o banco.
+  // Útil pra projetos antigos criados antes da feature de auto-sincronização.
+  const sincronizarTodosPagamentos = useCallback(async () => {
+    let sincronizados = 0;
+    let pulados = 0;
+    for (const proj of state.projetos) {
+      const tem =
+        !!proj.valor_tcv &&
+        proj.valor_tcv > 0 &&
+        !!proj.num_parcelas &&
+        proj.num_parcelas > 0 &&
+        !!proj.data_inicio_pagamento;
+      if (!tem) {
+        pulados++;
+        continue;
+      }
+      await syncPagamentoAutoDoProjeto(proj);
+      sincronizados++;
+    }
+    return { sincronizados, pulados };
+  }, [state.projetos, syncPagamentoAutoDoProjeto]);
 
   // ─── Helper para persistir auditoria (best-effort) ───────────────────
   // Falha silenciosa: log no console mas não interrompe o fluxo. Auditoria
@@ -1544,6 +1579,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveOportunidade,
       deleteOportunidade,
       moveOportunidadeEtapa,
+      sincronizarTodosPagamentos,
       gerarCodigoProjeto,
       recuperarRegistro,
     }),
@@ -1571,6 +1607,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveOportunidade,
       deleteOportunidade,
       moveOportunidadeEtapa,
+      sincronizarTodosPagamentos,
       gerarCodigoProjeto,
       recuperarRegistro,
     ]

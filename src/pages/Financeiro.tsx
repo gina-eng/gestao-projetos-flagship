@@ -10,6 +10,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronRightSquare,
+  RefreshCw,
 } from "lucide-react";
 import { useApp } from "@/store";
 import {
@@ -93,9 +94,19 @@ function gerarMeses(inicio: Date, qtd: number) {
 }
 
 export function FinanceiroPage() {
-  const { pagamentos, projetos, clientes } = useApp();
+  const { pagamentos, projetos, clientes, sincronizarTodosPagamentos } = useApp();
   const [novoOpen, setNovoOpen] = useState(false);
   const [parcelaSel, setParcelaSel] = useState<{ pagamentoId: string; parcela: Parcela } | null>(null);
+  const [sincronizando, setSincronizando] = useState(false);
+
+  async function handleSync() {
+    setSincronizando(true);
+    const res = await sincronizarTodosPagamentos();
+    setSincronizando(false);
+    window.alert(
+      `Sincronização concluída.\n\n${res.sincronizados} projeto(s) sincronizado(s).\n${res.pulados} pulado(s) (faltam TCV / nº parcelas / data início pagamento).`
+    );
+  }
 
   // Janela inicial: 1 mês antes do atual + 11 meses pra frente (12 meses)
   const [inicioJanela, setInicioJanela] = useState(() => {
@@ -236,10 +247,26 @@ export function FinanceiroPage() {
         title="Financeiro"
         description="Tabela de parcelas: cada linha é um cliente, cada coluna um mês. Clique em uma célula para atualizar o status."
         actions={
-          <Button onClick={() => setNovoOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Novo pagamento
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={handleSync}
+              disabled={sincronizando}
+              title="Recria os pagamentos espelho a partir dos campos de pagamento de cada projeto (TCV + parcelas + data início). Preserva parcelas pagas."
+            >
+              <RefreshCw
+                className={cn(
+                  "h-4 w-4",
+                  sincronizando && "animate-spin"
+                )}
+              />
+              {sincronizando ? "Sincronizando…" : "Sincronizar do projeto"}
+            </Button>
+            <Button onClick={() => setNovoOpen(true)}>
+              <Plus className="h-4 w-4" />
+              Novo pagamento
+            </Button>
+          </>
         }
       />
 
