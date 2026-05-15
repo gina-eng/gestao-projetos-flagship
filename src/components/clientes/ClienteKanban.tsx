@@ -90,9 +90,10 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
   }
 
   return (
-    <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
-      <div className="flex min-w-max gap-3">
-        {FASES_CLIENTE.map((fase) => {
+    <div className="rounded-xl border border-border/60 bg-card/40 p-3">
+      <div className="kanban-scroller overflow-x-auto pb-3">
+        <div className="flex min-w-max gap-3 pr-1">
+          {FASES_CLIENTE.map((fase) => {
           const cards = clientes.filter((c) => faseDoCliente(c) === fase.value);
           return (
             <div
@@ -209,6 +210,7 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

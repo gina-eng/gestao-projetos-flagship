@@ -59,9 +59,10 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
   }
 
   return (
-    <div className="kanban-scroller -mx-4 overflow-x-auto px-4 pb-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-      <div className="flex min-w-max gap-3 pr-2">
-        {fasesOrdenadas.map((fase) => {
+    <div className="rounded-xl border border-border/60 bg-card/40 p-3">
+      <div className="kanban-scroller overflow-x-auto pb-3">
+        <div className="flex min-w-max gap-3 pr-1">
+          {fasesOrdenadas.map((fase) => {
           const cards = projetos.filter((p) => p.fase_atual === fase.id);
           const total = cards.reduce(
             (acc, p) => acc + (p.modelo_cobranca === "recorrente" ? p.valor_total : 0),
@@ -184,6 +185,7 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );
