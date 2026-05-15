@@ -1,0 +1,42 @@
+.sidebar-shell {
+  background-color: #140003;
+  background-image: url("/login-bg.svg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+.sidebar-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(20, 0, 3, 0.0) 0%, rgba(20, 0, 3, 0.65) 100%);
+  pointer-events: none;
+}
+
+.sidebar-card {
+  background-color: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-link {
+  color: rgba(255, 255, 255, 0.78);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-link:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+.sidebar-link.active {
+  background-color: rgba(255, 255, 255, 0.15);
+  color: white;
+  font-weight: 600;
+}
+
+.main-shell {
+  background: hsl(var(--background));
+  min-height: 100vh;
+}
