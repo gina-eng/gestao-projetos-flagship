@@ -31,7 +31,6 @@ const NAV: NavItem[] = [
   { to: "/investidores", label: "Investidores", icon: Briefcase },
   { to: "/produtos", label: "Produtos", icon: Package },
   { to: "/financeiro", label: "Financeiro", icon: Wallet },
-  { to: "/auditoria", label: "Auditoria", icon: History },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -84,6 +83,22 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               {sessao?.perfil}
             </p>
           </div>
+          {/* Auditoria fica discreta: ícone pequeno + label menor, sem destaque
+              visual. É uma "página de backup" — acesso eventual, não diário. */}
+          <NavLink
+            to="/auditoria"
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn(
+                "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-[11px] text-white/40 hover:bg-white/5 hover:text-white/70",
+                isActive && "bg-white/5 text-white/80"
+              )
+            }
+            title="Histórico imutável de alterações"
+          >
+            <History className="h-3 w-3" />
+            <span>Auditoria</span>
+          </NavLink>
           <button
             onClick={async () => {
               await logout();
