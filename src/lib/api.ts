@@ -270,6 +270,29 @@ export async function softDeleteCliente(id: string): Promise<void> {
   throwIfError(error);
 }
 
+// Exclusão FÍSICA do cliente. Como `projetos.cliente_id` tem
+// ON DELETE RESTRICT, o Postgres bloqueia se houver projetos vinculados —
+// mapeamos esse erro para uma mensagem amigável.
+export async function hardDeleteCliente(id: string): Promise<void> {
+  const supa = db();
+  // Limpa filhos manuais (contatos/conexoes têm ON DELETE CASCADE; deixar
+  // o cascade fazer o trabalho).
+  const { error } = await supa.from("clientes").delete().eq("id", id);
+  if (error) {
+    const msg = (error.message || "").toLowerCase();
+    if (
+      msg.includes("foreign key") ||
+      msg.includes("violates") ||
+      msg.includes("restrict")
+    ) {
+      throw new Error(
+        "Existem projetos vinculados a este cliente. Exclua ou mova os projetos antes."
+      );
+    }
+    throw new Error(error.message || "Erro ao excluir cliente.");
+  }
+}
+
 export async function moveClienteStatus(id: string, status: Cliente["status"]): Promise<void> {
   const patch: Record<string, unknown> = { status };
   if (status === "churn") {
@@ -482,6 +505,15 @@ export async function softDeleteProjeto(id: string): Promise<void> {
     .update({ status: "concluido" })
     .eq("id", id);
   throwIfError(error);
+}
+
+// Exclusão FÍSICA do projeto. Cascades cuidam de squad_membros, reuniões,
+// links_rapidos, pagamentos e parcelas.
+export async function hardDeleteProjeto(id: string): Promise<void> {
+  const { error } = await db().from("projetos").delete().eq("id", id);
+  if (error) {
+    throw new Error(error.message || "Erro ao excluir projeto.");
+  }
 }
 
 export async function moveProjetoFase(id: string, fase: string): Promise<void> {

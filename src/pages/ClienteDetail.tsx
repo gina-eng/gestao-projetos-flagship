@@ -60,7 +60,7 @@ type SetField = <K extends keyof Cliente>(key: K, value: Cliente[K]) => void;
 export function ClienteDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { clientes, projetos, produtos, fases, auditoria, saveCliente } = useApp();
+  const { clientes, projetos, produtos, fases, auditoria, saveCliente, deleteCliente } = useApp();
 
   const saved = clientes.find((c) => c.id === id);
   const [draft, setDraft] = useState<Cliente | null>(saved ?? null);
@@ -180,6 +180,27 @@ export function ClienteDetailPage() {
     if (!window.confirm("Descartar todas as alterações?")) return;
     setDraft(saved);
     setErrors({});
+  }
+
+  async function excluir() {
+    if (!saved) return;
+    const qtdProjetos = projetos.filter((p) => p.cliente_id === saved.id).length;
+    if (qtdProjetos > 0) {
+      window.alert(
+        `Este cliente tem ${qtdProjetos} projeto(s) vinculado(s). ` +
+          "Exclua ou desvincule os projetos antes de excluir o cliente."
+      );
+      return;
+    }
+    const ok = window.confirm(
+      `Excluir o cliente "${saved.sigla} · ${saved.nome_fantasia}"?\n\n` +
+        "Isso remove o cliente, contatos e conexões vinculados. " +
+        "A operação é PERMANENTE e não pode ser desfeita.\n\n" +
+        "Para apenas marcar como inativo, mude o Status no card de Dados."
+    );
+    if (!ok) return;
+    await deleteCliente(saved.id);
+    navigate("/clientes");
   }
 
   const projetosCliente = projetos.filter((p) => p.cliente_id === draft.id);
@@ -353,6 +374,37 @@ export function ClienteDetailPage() {
             vazio="Nenhuma alteração registrada ainda."
             limiteInicial={6}
           />
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-title-card text-destructive">
+            Zona perigosa
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-foreground">
+                Excluir este cliente
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Remove permanentemente o cliente, stakeholders e conexões.
+                Não é possível excluir se houver projetos vinculados — exclua
+                ou desvincule os projetos primeiro. Para apenas marcar como
+                inativo, mude o Status no card de Dados.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={excluir}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir cliente
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

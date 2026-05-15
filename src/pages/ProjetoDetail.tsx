@@ -147,6 +147,7 @@ export function ProjetoDetailPage() {
     fases,
     auditoria,
     saveProjeto,
+    deleteProjeto,
   } = useApp();
 
   const saved = projetos.find((p) => p.id === id);
@@ -254,6 +255,20 @@ export function ProjetoDetailPage() {
     if (!window.confirm("Descartar todas as alterações?")) return;
     setDraft(saved);
     setErrors({});
+  }
+
+  async function excluir() {
+    if (!saved) return;
+    const ok = window.confirm(
+      `Excluir o projeto "${saved.codigo} · ${saved.nome}"?\n\n` +
+        "Isso remove o projeto, pagamentos, parcelas, reuniões e squad " +
+        "vinculados. A operação é PERMANENTE e não pode ser desfeita.\n\n" +
+        "Para apenas encerrar o projeto sem perder histórico, mude o " +
+        "Status para 'Concluído' no card de Dados."
+    );
+    if (!ok) return;
+    await deleteProjeto(saved.id);
+    navigate("/projetos");
   }
 
   const cliente = clientes.find((c) => c.id === draft.cliente_id);
@@ -477,6 +492,36 @@ export function ProjetoDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-destructive/40">
+        <CardHeader>
+          <CardTitle className="text-title-card text-destructive">
+            Zona perigosa
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-0.5">
+              <p className="text-sm font-semibold text-foreground">
+                Excluir este projeto
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Remove permanentemente o projeto, pagamentos, parcelas,
+                reuniões e squad vinculados. Para apenas encerrar sem perder
+                histórico, mude o Status para "Concluído" no card de Dados.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={excluir}
+              className="shrink-0"
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir projeto
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

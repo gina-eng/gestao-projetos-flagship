@@ -452,26 +452,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const cli = state.clientes.find((c) => c.id === id);
       if (!cli) return;
       try {
-        await api.softDeleteCliente(id);
+        await api.hardDeleteCliente(id);
       } catch (err) {
-        notificarErro("remover cliente", err);
+        notificarErro("excluir cliente", err);
         return;
       }
-      const novo: Cliente = { ...cli, status: "inativo" };
+      // Auditoria fica como pista do que existiu (entidade_id permanece).
       const registro = fazerRegistro(
         {
           entidade: "cliente",
           entidade_id: id,
           entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
           acao: "remover",
-          resumo: "Cliente marcado como inativo",
-          mudancas: diffCliente(cli, novo),
+          resumo: "Cliente excluído permanentemente",
+          mudancas: [],
         },
         state.sessao
       );
       setState((s) => ({
         ...s,
-        clientes: s.clientes.map((c) => (c.id === id ? novo : c)),
+        clientes: s.clientes.filter((c) => c.id !== id),
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
@@ -693,31 +693,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const prj = state.projetos.find((p) => p.id === id);
       if (!prj) return;
       try {
-        await api.softDeleteProjeto(id);
+        await api.hardDeleteProjeto(id);
       } catch (err) {
-        notificarErro("remover projeto", err);
+        notificarErro("excluir projeto", err);
         return;
       }
-      const novo: Projeto = { ...prj, status: "concluido" };
+      // Pagamentos/parcelas/reuniões/squad são removidos em cascata pelo DB.
       const registro = fazerRegistro(
         {
           entidade: "projeto",
           entidade_id: id,
           entidade_label: `${prj.codigo} · ${prj.nome}`,
           acao: "remover",
-          resumo: "Projeto encerrado",
-          mudancas: diffProjeto(prj, novo, state.fases),
+          resumo: "Projeto excluído permanentemente",
+          mudancas: [],
         },
         state.sessao
       );
       setState((s) => ({
         ...s,
-        projetos: s.projetos.map((p) => (p.id === id ? novo : p)),
+        projetos: s.projetos.filter((p) => p.id !== id),
+        pagamentos: s.pagamentos.filter((p) => p.projeto_id !== id),
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
     },
-    [state.projetos, state.fases, state.sessao, persistirAudit]
+    [state.projetos, state.sessao, persistirAudit]
   );
 
   const moveProjetoFase = useCallback(
