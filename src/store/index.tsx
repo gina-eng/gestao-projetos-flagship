@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { Session } from "@supabase/supabase-js";
 import {
   AcaoAuditoria,
   CampoMudanca,
@@ -9,6 +10,7 @@ import {
   Investidor,
   Pagamento,
   Parcela,
+  type Perfil,
   Produto,
   Projeto,
   RegistroAuditoria,
@@ -17,6 +19,7 @@ import {
 } from "@/types";
 import { readKey, STORAGE_KEYS, writeKey } from "./storage";
 import { seedInicial } from "./seed";
+import { supabase } from "@/lib/supabase";
 import { uid } from "@/lib/utils";
 import {
   diffCliente,
@@ -40,9 +43,16 @@ interface AppState {
   sessao: Sessao | null;
 }
 
+export interface AuthResult {
+  ok: boolean;
+  erro?: string;
+}
+
 interface AppActions {
-  login: (email: string, senha: string) => Promise<boolean>;
-  logout: () => void;
+  login: (email: string, senha: string) => Promise<AuthResult>;
+  signUp: (email: string, senha: string, nome: string) => Promise<AuthResult>;
+  resetPassword: (email: string) => Promise<AuthResult>;
+  logout: () => Promise<void>;
 
   saveCliente: (cliente: Cliente) => void;
   deleteCliente: (id: string) => void;
@@ -168,31 +178,123 @@ export function AppProvider({ children }: { children: ReactNode }) {
     else localStorage.removeItem("v4gp:" + STORAGE_KEYS.sessao);
   }, [state.sessao]);
 
+  // ─── Auth via Supabase ────────────────────────────────────────────────
+  // A sessão vem do Supabase Auth. Mantemos a interface Sessao da app pra
+  // não quebrar consumidores existentes (Layout, RequireAuth, auditoria).
+  function mapSupabaseSession(s: Session | null): Sessao | null {
+    if (!s?.user?.email) return null;
+    const meta = (s.user.user_metadata ?? {}) as { nome?: string; perfil?: Perfil };
+    return {
+      usuario_id: s.user.id,
+      email: s.user.email,
+      nome: meta.nome ?? s.user.email,
+      perfil: (meta.perfil as Perfil) ?? "executor",
+      expira_em: new Date((s.expires_at ?? 0) * 1000).toISOString(),
+    };
+  }
+
+  // Sincroniza state.sessao com Supabase Auth (sessão atual + mudanças).
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+    supabase.auth.getSession().then(({ data }) => {
+      if (cancelled) return;
+      setState((s) => ({ ...s, sessao: mapSupabaseSession(data.session) }));
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setState((s) => ({ ...s, sessao: mapSupabaseSession(session) }));
+    });
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
   const login = useCallback(
-    async (email: string, senha: string): Promise<boolean> => {
-      const u = state.usuarios.find(
-        (x) => x.email.toLowerCase() === email.toLowerCase() && x.status === "ativo"
-      );
-      if (!u) return false;
-      if (u.senha_hash !== hashSenha(senha)) return false;
-      const sessao: Sessao = {
-        usuario_id: u.id,
-        email: u.email,
-        nome: u.nome,
-        perfil: u.perfil,
-        expira_em: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
-      };
-      setState((s) => ({
-        ...s,
-        sessao,
-        usuarios: s.usuarios.map((x) => (x.id === u.id ? { ...x, ultimo_login: new Date().toISOString() } : x)),
-      }));
-      return true;
+    async (email: string, senha: string): Promise<AuthResult> => {
+      if (!supabase) {
+        return { ok: false, erro: "Supabase não configurado." };
+      }
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: senha,
+      });
+      if (error) {
+        // Mapeia mensagens comuns pra português.
+        const msg = error.message.toLowerCase();
+        if (msg.includes("invalid login credentials")) {
+          return { ok: false, erro: "E-mail ou senha incorretos." };
+        }
+        if (msg.includes("email not confirmed")) {
+          return {
+            ok: false,
+            erro: "Confirme seu e-mail antes de entrar. Confira sua caixa de entrada.",
+          };
+        }
+        return { ok: false, erro: error.message };
+      }
+      return { ok: true };
     },
-    [state.usuarios]
+    []
   );
 
-  const logout = useCallback(() => {
+  const signUp = useCallback(
+    async (email: string, senha: string, nome: string): Promise<AuthResult> => {
+      if (!supabase) {
+        return { ok: false, erro: "Supabase não configurado." };
+      }
+      const emailNorm = email.trim().toLowerCase();
+      if (!emailNorm.endsWith("@v4company.com")) {
+        return {
+          ok: false,
+          erro: "Acesso restrito a e-mails @v4company.com.",
+        };
+      }
+      const { error } = await supabase.auth.signUp({
+        email: emailNorm,
+        password: senha,
+        options: {
+          data: { nome: nome.trim(), perfil: "executor" as Perfil },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
+      });
+      if (error) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes("already registered") || msg.includes("already exists")) {
+          return { ok: false, erro: "Esse e-mail já está cadastrado." };
+        }
+        if (msg.includes("v4company")) {
+          return {
+            ok: false,
+            erro: "Apenas e-mails @v4company.com podem se cadastrar.",
+          };
+        }
+        return { ok: false, erro: error.message };
+      }
+      return { ok: true };
+    },
+    []
+  );
+
+  const resetPassword = useCallback(
+    async (email: string): Promise<AuthResult> => {
+      if (!supabase) {
+        return { ok: false, erro: "Supabase não configurado." };
+      }
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim().toLowerCase(),
+        { redirectTo: `${window.location.origin}/login` }
+      );
+      if (error) return { ok: false, erro: error.message };
+      return { ok: true };
+    },
+    []
+  );
+
+  const logout = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setState((s) => ({ ...s, sessao: null }));
   }, []);
 
@@ -727,6 +829,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       ...state,
       login,
+      signUp,
+      resetPassword,
       logout,
       saveCliente,
       deleteCliente,
@@ -748,6 +852,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       state,
       login,
+      signUp,
+      resetPassword,
       logout,
       saveCliente,
       deleteCliente,

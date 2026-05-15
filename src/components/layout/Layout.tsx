@@ -83,8 +83,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             </p>
           </div>
           <button
-            onClick={() => {
-              logout();
+            onClick={async () => {
+              await logout();
               navigate("/login");
             }}
             className="sidebar-link flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm"
