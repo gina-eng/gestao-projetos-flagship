@@ -43,7 +43,7 @@ export function InvestidoresPage() {
     }
     // Mensal por projeto:
     // - recorrente: valor_total (já é o mensal). Se vier 0, derivamos do TCV÷lt_meses.
-    // - one-time / parcelado: TCV ÷ horizonte (lt_meses, fallback em num_parcelas).
+    // - one-time / parcelado: TCV ÷ horizonte (num_parcelas, fallback em lt_meses).
     function mensalDoProjeto(p: typeof projetosDele[number]) {
       const tcvP = tcvDoProjeto(p);
       if (p.modelo_cobranca === "recorrente") {
@@ -51,15 +51,22 @@ export function InvestidoresPage() {
         if (p.lt_meses && p.lt_meses > 0) return tcvP / p.lt_meses;
         return 0;
       }
-      const meses = p.lt_meses && p.lt_meses > 0
-        ? p.lt_meses
-        : p.num_parcelas && p.num_parcelas > 0
-          ? p.num_parcelas
+      const meses = p.num_parcelas && p.num_parcelas > 0
+        ? p.num_parcelas
+        : p.lt_meses && p.lt_meses > 0
+          ? p.lt_meses
           : 1;
       return tcvP / meses;
     }
-    const mensal = projetosDele.reduce((acc, p) => acc + mensalDoProjeto(p), 0);
-    const tcv = projetosDele.reduce((acc, p) => acc + tcvDoProjeto(p), 0);
+    // Atribuição proporcional: cada investidor recebe a fatia (mensal/TCV) ÷ pessoas no squad.
+    const mensal = projetosDele.reduce((acc, p) => {
+      const share = Math.max(1, p.squad.length || 1);
+      return acc + mensalDoProjeto(p) / share;
+    }, 0);
+    const tcv = projetosDele.reduce((acc, p) => {
+      const share = Math.max(1, p.squad.length || 1);
+      return acc + tcvDoProjeto(p) / share;
+    }, 0);
     return { projetos: projetosDele.length, mensal, tcv };
   }
 
