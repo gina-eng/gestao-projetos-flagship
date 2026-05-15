@@ -7,9 +7,12 @@ import {
   Activity,
   ChevronDown,
   ChevronRight,
+  Loader2,
+  Undo2,
   User as UserIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useApp } from "@/store";
 import { AcaoAuditoria, EntidadeAuditavel, RegistroAuditoria } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +24,13 @@ interface Props {
   // Quantos registros mostrar inicialmente; o resto fica em "ver mais".
   limiteInicial?: number;
 }
+
+// Entidades que suportam a operação "Recuperar" via store.recuperarRegistro.
+const ENTIDADES_RECUPERAVEIS: EntidadeAuditavel[] = [
+  "cliente",
+  "projeto",
+  "investidor",
+];
 
 const ACAO_ICON: Record<AcaoAuditoria, typeof Plus> = {
   criar: Plus,
@@ -72,8 +82,27 @@ export function HistoricoAuditoria({
   className,
   limiteInicial = 8,
 }: Props) {
+  const { recuperarRegistro } = useApp();
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
   const [verTodos, setVerTodos] = useState(false);
+  const [recuperandoId, setRecuperandoId] = useState<string | null>(null);
+
+  async function handleRecuperar(
+    e: React.MouseEvent,
+    registro: RegistroAuditoria
+  ) {
+    e.stopPropagation();
+    const ok = window.confirm(
+      `Recuperar "${registro.entidade_label}"?\n\n` +
+        "Volta o status para ativo. A entidade reaparece nas listagens e " +
+        "no kanban."
+    );
+    if (!ok) return;
+    setRecuperandoId(registro.id);
+    const erro = await recuperarRegistro(registro.id);
+    setRecuperandoId(null);
+    if (erro) window.alert(erro);
+  }
 
   const ordenados = useMemo(
     () => [...registros].sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
@@ -118,59 +147,85 @@ export function HistoricoAuditoria({
           const Icon = ACAO_ICON[r.acao];
           const aberto = expandidos.has(r.id);
           const tem = r.mudancas.length > 0;
+          const recuperavel =
+            r.acao === "remover" && ENTIDADES_RECUPERAVEIS.includes(r.entidade);
+          const recuperando = recuperandoId === r.id;
           return (
             <li
               key={r.id}
               className="overflow-hidden rounded-md border border-border/60 bg-card"
             >
-              <button
-                type="button"
-                onClick={() => tem && toggle(r.id)}
+              <div
                 className={cn(
                   "flex w-full items-start gap-3 p-3 text-left transition-colors",
-                  tem && "hover:bg-muted/40 cursor-pointer",
-                  !tem && "cursor-default"
+                  tem && "hover:bg-muted/40"
                 )}
               >
-                <span
+                <button
+                  type="button"
+                  onClick={() => tem && toggle(r.id)}
                   className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-                    ACAO_TONE[r.acao]
+                    "flex flex-1 items-start gap-3 text-left",
+                    tem && "cursor-pointer",
+                    !tem && "cursor-default"
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="outline" className="text-[9px] uppercase">
-                      {ENT_LABEL[r.entidade]}
-                    </Badge>
-                    <span className="truncate text-sm font-semibold text-foreground">
-                      {r.entidade_label}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-content">{r.resumo}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-                    <span>{formatTimestamp(r.timestamp)}</span>
-                    {r.usuario_nome && (
-                      <span className="flex items-center gap-1">
-                        <UserIcon className="h-2.5 w-2.5" />
-                        {r.usuario_nome}
-                      </span>
+                  <span
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                      ACAO_TONE[r.acao]
                     )}
-                    {tem && (
-                      <span className="flex items-center gap-1 font-medium">
-                        {aberto ? (
-                          <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3" />
-                        )}
-                        {aberto ? "Ocultar" : "Ver"} alterações
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="outline" className="text-[9px] uppercase">
+                        {ENT_LABEL[r.entidade]}
+                      </Badge>
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {r.entidade_label}
                       </span>
-                    )}
+                    </div>
+                    <p className="mt-0.5 text-xs text-content">{r.resumo}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <span>{formatTimestamp(r.timestamp)}</span>
+                      {r.usuario_nome && (
+                        <span className="flex items-center gap-1">
+                          <UserIcon className="h-2.5 w-2.5" />
+                          {r.usuario_nome}
+                        </span>
+                      )}
+                      {tem && (
+                        <span className="flex items-center gap-1 font-medium">
+                          {aberto ? (
+                            <ChevronDown className="h-3 w-3" />
+                          ) : (
+                            <ChevronRight className="h-3 w-3" />
+                          )}
+                          {aberto ? "Ocultar" : "Ver"} alterações
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+                {recuperavel && (
+                  <button
+                    type="button"
+                    onClick={(e) => handleRecuperar(e, r)}
+                    disabled={recuperando}
+                    className="shrink-0 inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                    title={`Recuperar ${ENT_LABEL[r.entidade].toLowerCase()}`}
+                  >
+                    {recuperando ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Undo2 className="h-3 w-3" />
+                    )}
+                    Recuperar
+                  </button>
+                )}
+              </div>
 
               {tem && aberto && (
                 <div className="border-t border-border/60 bg-muted/30 p-3">

@@ -83,6 +83,11 @@ interface AppActions {
   saveFase: (fase: Fase) => Promise<void>;
   deleteFase: (id: string) => Promise<string | null>;
   reordenarFases: (idsEmOrdem: string[]) => Promise<void>;
+
+  // Recupera uma entidade a partir de um registro de auditoria de remoção
+  // (volta status pra 'ativo'). Retorna mensagem de erro em string ou null
+  // se OK.
+  recuperarRegistro: (registroId: string) => Promise<string | null>;
 }
 
 type AppContextValue = AppState & AppActions & { gerarCodigoProjeto: (clienteId: string) => string };
@@ -447,31 +452,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.clientes, state.sessao, persistirAudit]
   );
 
+  // Soft delete: marca como inativo (preserva entidade e dados vinculados
+  // pra permitir "Recuperar" depois via auditoria).
   const deleteCliente = useCallback(
     async (id: string) => {
       const cli = state.clientes.find((c) => c.id === id);
       if (!cli) return;
+      const statusAnterior = cli.status;
       try {
-        await api.hardDeleteCliente(id);
+        await api.softDeleteCliente(id);
       } catch (err) {
         notificarErro("excluir cliente", err);
         return;
       }
-      // Auditoria fica como pista do que existiu (entidade_id permanece).
+      const novo: Cliente = { ...cli, status: "inativo" };
       const registro = fazerRegistro(
         {
           entidade: "cliente",
           entidade_id: id,
           entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
           acao: "remover",
-          resumo: "Cliente excluído permanentemente",
-          mudancas: [],
+          resumo: "Cliente marcado como inativo",
+          mudancas: [
+            { campo: "status", label: "Status", de: statusAnterior, para: "inativo" },
+          ],
         },
         state.sessao
       );
       setState((s) => ({
         ...s,
-        clientes: s.clientes.filter((c) => c.id !== id),
+        clientes: s.clientes.map((c) => (c.id === id ? novo : c)),
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
@@ -688,32 +698,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.projetos, state.fases, state.sessao, persistirAudit]
   );
 
+  // Soft delete: marca como concluído (preserva projeto + pagamentos +
+  // squad + reuniões para permitir "Recuperar" depois via auditoria).
   const deleteProjeto = useCallback(
     async (id: string) => {
       const prj = state.projetos.find((p) => p.id === id);
       if (!prj) return;
+      const statusAnterior = prj.status;
       try {
-        await api.hardDeleteProjeto(id);
+        await api.softDeleteProjeto(id);
       } catch (err) {
         notificarErro("excluir projeto", err);
         return;
       }
-      // Pagamentos/parcelas/reuniões/squad são removidos em cascata pelo DB.
+      const novo: Projeto = { ...prj, status: "concluido" };
       const registro = fazerRegistro(
         {
           entidade: "projeto",
           entidade_id: id,
           entidade_label: `${prj.codigo} · ${prj.nome}`,
           acao: "remover",
-          resumo: "Projeto excluído permanentemente",
-          mudancas: [],
+          resumo: "Projeto encerrado",
+          mudancas: [
+            { campo: "status", label: "Status", de: statusAnterior, para: "concluido" },
+          ],
         },
         state.sessao
       );
       setState((s) => ({
         ...s,
-        projetos: s.projetos.filter((p) => p.id !== id),
-        pagamentos: s.pagamentos.filter((p) => p.projeto_id !== id),
+        projetos: s.projetos.map((p) => (p.id === id ? novo : p)),
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
@@ -1030,6 +1044,121 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.clientes, state.projetos]
   );
 
+  // ─── Recuperação a partir de um registro de auditoria ────────────────
+  // Hoje suporta apenas `acao === 'remover'`. Reverte o status pra ativo
+  // (cliente: 'ativo'; projeto: 'ativo'; investidor: 'ativo').
+  const recuperarRegistro = useCallback(
+    async (registroId: string): Promise<string | null> => {
+      const reg = state.auditoria.find((a) => a.id === registroId);
+      if (!reg) return "Registro de auditoria não encontrado.";
+      if (reg.acao !== "remover") {
+        return "Só é possível recuperar registros de remoção.";
+      }
+      try {
+        if (reg.entidade === "cliente") {
+          const cli = state.clientes.find((c) => c.id === reg.entidade_id);
+          if (!cli) return "Cliente não está mais no banco — recuperação indisponível.";
+          await api.moveClienteStatus(cli.id, "ativo");
+          const novo: Cliente = { ...cli, status: "ativo" };
+          const registroNovo = fazerRegistro(
+            {
+              entidade: "cliente",
+              entidade_id: cli.id,
+              entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
+              acao: "evento",
+              resumo: "Cliente recuperado (status → ativo)",
+              mudancas: [
+                {
+                  campo: "status",
+                  label: "Status",
+                  de: cli.status,
+                  para: "ativo",
+                },
+              ],
+            },
+            state.sessao
+          );
+          setState((s) => ({
+            ...s,
+            clientes: s.clientes.map((c) => (c.id === cli.id ? novo : c)),
+            auditoria: [registroNovo, ...s.auditoria],
+          }));
+          persistirAudit(registroNovo, state.sessao?.email);
+          return null;
+        }
+        if (reg.entidade === "projeto") {
+          const prj = state.projetos.find((p) => p.id === reg.entidade_id);
+          if (!prj) return "Projeto não está mais no banco — recuperação indisponível.";
+          const novo: Projeto = { ...prj, status: "ativo" };
+          await api.upsertProjeto(novo);
+          const registroNovo = fazerRegistro(
+            {
+              entidade: "projeto",
+              entidade_id: prj.id,
+              entidade_label: `${prj.codigo} · ${prj.nome}`,
+              acao: "evento",
+              resumo: "Projeto recuperado (status → ativo)",
+              mudancas: [
+                {
+                  campo: "status",
+                  label: "Status",
+                  de: prj.status,
+                  para: "ativo",
+                },
+              ],
+            },
+            state.sessao
+          );
+          setState((s) => ({
+            ...s,
+            projetos: s.projetos.map((p) => (p.id === prj.id ? novo : p)),
+            auditoria: [registroNovo, ...s.auditoria],
+          }));
+          persistirAudit(registroNovo, state.sessao?.email);
+          return null;
+        }
+        if (reg.entidade === "investidor") {
+          const inv = state.investidores.find((i) => i.id === reg.entidade_id);
+          if (!inv) return "Investidor não está mais no banco — recuperação indisponível.";
+          const novo: Investidor = { ...inv, status: "ativo", data_saida: undefined };
+          await api.upsertInvestidor(novo);
+          const registroNovo = fazerRegistro(
+            {
+              entidade: "investidor",
+              entidade_id: inv.id,
+              entidade_label: inv.nome,
+              acao: "evento",
+              resumo: "Investidor recuperado (status → ativo)",
+              mudancas: [
+                { campo: "status", label: "Status", de: inv.status, para: "ativo" },
+              ],
+            },
+            state.sessao
+          );
+          setState((s) => ({
+            ...s,
+            investidores: s.investidores.map((i) => (i.id === inv.id ? novo : i)),
+            auditoria: [registroNovo, ...s.auditoria],
+          }));
+          persistirAudit(registroNovo, state.sessao?.email);
+          return null;
+        }
+        return `Recuperação não suportada para entidade "${reg.entidade}".`;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Falha ao recuperar.";
+        return msg;
+      }
+    },
+    [
+      state.auditoria,
+      state.clientes,
+      state.projetos,
+      state.investidores,
+      state.sessao,
+      persistirAudit,
+    ]
+  );
+
 
   const value = useMemo<AppContextValue>(
     () => ({
@@ -1054,6 +1183,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
+      recuperarRegistro,
     }),
     [
       state,
@@ -1077,6 +1207,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
+      recuperarRegistro,
     ]
   );
 
