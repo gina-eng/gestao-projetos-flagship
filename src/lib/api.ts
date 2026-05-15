@@ -16,6 +16,7 @@ import {
   Fase,
   Investidor,
   LinkRapido,
+  Oportunidade,
   Pagamento,
   Parcela,
   Projeto,
@@ -629,6 +630,82 @@ export async function upsertParcela(p: Parcela): Promise<void> {
   throwIfError(error);
 }
 
+// ─── OPORTUNIDADES ────────────────────────────────────────────────────────
+
+export async function fetchOportunidades(): Promise<Oportunidade[]> {
+  const { data, error } = await db()
+    .from("oportunidades")
+    .select("*")
+    .order("criado_em", { ascending: false });
+  throwIfError(error);
+  return (data ?? []).map(rowToOportunidade);
+}
+
+function rowToOportunidade(r: Record<string, unknown>): Oportunidade {
+  return {
+    id: r.id as string,
+    cliente_id: r.cliente_id as string,
+    produto_id: r.produto_id as string,
+    variacao_id: (r.variacao_id as string) ?? undefined,
+    nome: r.nome as string,
+    valor_estimado: Number(r.valor_estimado),
+    modelo_cobranca: r.modelo_cobranca as Oportunidade["modelo_cobranca"],
+    lt_meses: (r.lt_meses as number) ?? undefined,
+    origem_projeto_id: (r.origem_projeto_id as string) ?? undefined,
+    responsavel_id: (r.responsavel_id as string) ?? undefined,
+    etapa: r.etapa as Oportunidade["etapa"],
+    motivo_perda: (r.motivo_perda as Oportunidade["motivo_perda"]) ?? undefined,
+    proxima_acao: (r.proxima_acao as string) ?? undefined,
+    data_proxima_acao: (r.data_proxima_acao as string) ?? undefined,
+    data_fechamento_prevista: (r.data_fechamento_prevista as string) ?? undefined,
+    data_fechamento_real: (r.data_fechamento_real as string) ?? undefined,
+    observacoes: (r.observacoes as string) ?? undefined,
+  };
+}
+
+export async function upsertOportunidade(o: Oportunidade): Promise<void> {
+  const { error } = await db().from("oportunidades").upsert({
+    id: o.id,
+    cliente_id: o.cliente_id,
+    produto_id: o.produto_id,
+    variacao_id: o.variacao_id ?? null,
+    nome: o.nome,
+    valor_estimado: o.valor_estimado,
+    modelo_cobranca: o.modelo_cobranca,
+    lt_meses: o.lt_meses ?? null,
+    origem_projeto_id: o.origem_projeto_id ?? null,
+    responsavel_id: o.responsavel_id ?? null,
+    etapa: o.etapa,
+    motivo_perda: o.motivo_perda ?? null,
+    proxima_acao: o.proxima_acao ?? null,
+    data_proxima_acao: o.data_proxima_acao ?? null,
+    data_fechamento_prevista: o.data_fechamento_prevista ?? null,
+    data_fechamento_real: o.data_fechamento_real ?? null,
+    observacoes: o.observacoes ?? null,
+  });
+  throwIfError(error);
+}
+
+export async function moveOportunidadeEtapa(
+  id: string,
+  etapa: Oportunidade["etapa"]
+): Promise<void> {
+  const patch: Record<string, unknown> = { etapa };
+  if (etapa === "ganha" || etapa === "perdida") {
+    patch.data_fechamento_real = new Date().toISOString().slice(0, 10);
+  } else {
+    patch.data_fechamento_real = null;
+    patch.motivo_perda = null;
+  }
+  const { error } = await db().from("oportunidades").update(patch).eq("id", id);
+  throwIfError(error);
+}
+
+export async function hardDeleteOportunidade(id: string): Promise<void> {
+  const { error } = await db().from("oportunidades").delete().eq("id", id);
+  throwIfError(error);
+}
+
 // ─── AUDITORIA ────────────────────────────────────────────────────────────
 
 export async function fetchAuditoria(limit = 500): Promise<RegistroAuditoria[]> {
@@ -686,10 +763,11 @@ export interface DadosCarregados {
   projetos: Projeto[];
   pagamentos: Pagamento[];
   auditoria: RegistroAuditoria[];
+  oportunidades: Oportunidade[];
 }
 
 export async function fetchTudo(): Promise<DadosCarregados> {
-  const [clientes, investidores, fases, projetos, pagamentos, auditoria] =
+  const [clientes, investidores, fases, projetos, pagamentos, auditoria, oportunidades] =
     await Promise.all([
       fetchClientes(),
       fetchInvestidores(),
@@ -697,6 +775,7 @@ export async function fetchTudo(): Promise<DadosCarregados> {
       fetchProjetos(),
       fetchPagamentos(),
       fetchAuditoria(),
+      fetchOportunidades(),
     ]);
-  return { clientes, investidores, fases, projetos, pagamentos, auditoria };
+  return { clientes, investidores, fases, projetos, pagamentos, auditoria, oportunidades };
 }

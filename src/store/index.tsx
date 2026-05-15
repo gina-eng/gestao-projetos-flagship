@@ -5,9 +5,11 @@ import {
   CampoMudanca,
   Cliente,
   EntidadeAuditavel,
+  ETAPA_OPORTUNIDADE_LABEL,
   Fase,
   FASES_DEFAULT,
   Investidor,
+  Oportunidade,
   Pagamento,
   Parcela,
   type Perfil,
@@ -38,6 +40,7 @@ interface AppState {
   projetos: Projeto[];
   pagamentos: Pagamento[];
   fases: Fase[];
+  oportunidades: Oportunidade[];
   auditoria: RegistroAuditoria[];
   usuarios: Usuario[];          // mantido só por retrocompat; Auth via Supabase
   sessao: Sessao | null;
@@ -83,6 +86,10 @@ interface AppActions {
   saveFase: (fase: Fase) => Promise<void>;
   deleteFase: (id: string) => Promise<string | null>;
   reordenarFases: (idsEmOrdem: string[]) => Promise<void>;
+
+  saveOportunidade: (o: Oportunidade) => Promise<void>;
+  deleteOportunidade: (id: string) => Promise<void>;
+  moveOportunidadeEtapa: (id: string, etapa: Oportunidade["etapa"]) => Promise<void>;
 
   // Recupera uma entidade a partir de um registro de auditoria de remoção
   // (volta status pra 'ativo'). Retorna mensagem de erro em string ou null
@@ -176,6 +183,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       projetos: [],
       pagamentos: [],
       fases: FASES_DEFAULT,
+      oportunidades: [],
       auditoria: [],
       usuarios: [],
       sessao: null,
@@ -234,6 +242,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         fases: FASES_DEFAULT,
         projetos: [],
         pagamentos: [],
+        oportunidades: [],
         auditoria: [],
         isLoading: false,
         loadError: null,
@@ -279,6 +288,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           fases: dados.fases.length > 0 ? dados.fases : FASES_DEFAULT,
           projetos: dados.projetos,
           pagamentos: dados.pagamentos,
+          oportunidades: dados.oportunidades,
           auditoria: dados.auditoria,
           isLoading: false,
           loadError: null,
@@ -1149,6 +1159,123 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.clientes, state.projetos]
   );
 
+  // ----- OPORTUNIDADE -----
+  const saveOportunidade = useCallback(
+    async (o: Oportunidade) => {
+      const existing = state.oportunidades.find((x) => x.id === o.id);
+      try {
+        await api.upsertOportunidade(o);
+      } catch (err) {
+        notificarErro("salvar oportunidade", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        oportunidades: existing
+          ? s.oportunidades.map((x) => (x.id === o.id ? o : x))
+          : [o, ...s.oportunidades],
+      }));
+      const cli = state.clientes.find((c) => c.id === o.cliente_id);
+      const registro = fazerRegistro(
+        {
+          entidade: "projeto", // reaproveita a entidade no audit (não temos "oportunidade" no enum)
+          entidade_id: o.id,
+          entidade_label: `Oportunidade · ${cli?.sigla ?? "?"} · ${o.nome}`,
+          acao: existing ? "atualizar" : "criar",
+          resumo: existing
+            ? "Oportunidade atualizada"
+            : `Oportunidade criada · etapa ${ETAPA_OPORTUNIDADE_LABEL[o.etapa]}`,
+          mudancas: [],
+        },
+        state.sessao
+      );
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.oportunidades, state.clientes, state.sessao, persistirAudit]
+  );
+
+  const deleteOportunidade = useCallback(
+    async (id: string) => {
+      const o = state.oportunidades.find((x) => x.id === id);
+      if (!o) return;
+      try {
+        await api.hardDeleteOportunidade(id);
+      } catch (err) {
+        notificarErro("excluir oportunidade", err);
+        return;
+      }
+      const cli = state.clientes.find((c) => c.id === o.cliente_id);
+      const registro = fazerRegistro(
+        {
+          entidade: "projeto",
+          entidade_id: id,
+          entidade_label: `Oportunidade · ${cli?.sigla ?? "?"} · ${o.nome}`,
+          acao: "remover",
+          resumo: "Oportunidade excluída",
+          mudancas: [],
+        },
+        state.sessao
+      );
+      setState((s) => ({
+        ...s,
+        oportunidades: s.oportunidades.filter((x) => x.id !== id),
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.oportunidades, state.clientes, state.sessao, persistirAudit]
+  );
+
+  const moveOportunidadeEtapa = useCallback(
+    async (id: string, novaEtapa: Oportunidade["etapa"]) => {
+      const o = state.oportunidades.find((x) => x.id === id);
+      if (!o || o.etapa === novaEtapa) return;
+      try {
+        await api.moveOportunidadeEtapa(id, novaEtapa);
+      } catch (err) {
+        notificarErro("mover oportunidade", err);
+        return;
+      }
+      const novo: Oportunidade = {
+        ...o,
+        etapa: novaEtapa,
+        data_fechamento_real:
+          novaEtapa === "ganha" || novaEtapa === "perdida"
+            ? new Date().toISOString().slice(0, 10)
+            : undefined,
+        // Limpa motivo de perda se sair de "perdida"
+        motivo_perda: novaEtapa === "perdida" ? o.motivo_perda : undefined,
+      };
+      const cli = state.clientes.find((c) => c.id === o.cliente_id);
+      const registro = fazerRegistro(
+        {
+          entidade: "projeto",
+          entidade_id: id,
+          entidade_label: `Oportunidade · ${cli?.sigla ?? "?"} · ${o.nome}`,
+          acao: "atualizar",
+          resumo: `Movida para "${ETAPA_OPORTUNIDADE_LABEL[novaEtapa]}"`,
+          mudancas: [
+            {
+              campo: "etapa",
+              label: "Etapa",
+              de: ETAPA_OPORTUNIDADE_LABEL[o.etapa],
+              para: ETAPA_OPORTUNIDADE_LABEL[novaEtapa],
+            },
+          ],
+        },
+        state.sessao
+      );
+      setState((s) => ({
+        ...s,
+        oportunidades: s.oportunidades.map((x) => (x.id === id ? novo : x)),
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.oportunidades, state.clientes, state.sessao, persistirAudit]
+  );
+
   // ─── Recuperação a partir de um registro de auditoria ────────────────
   // Hoje suporta apenas `acao === 'remover'`. Reverte o status pra ativo
   // (cliente: 'ativo'; projeto: 'ativo'; investidor: 'ativo').
@@ -1293,6 +1420,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveFase,
       deleteFase,
       reordenarFases,
+      saveOportunidade,
+      deleteOportunidade,
+      moveOportunidadeEtapa,
       gerarCodigoProjeto,
       recuperarRegistro,
     }),
@@ -1317,6 +1447,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveFase,
       deleteFase,
       reordenarFases,
+      saveOportunidade,
+      deleteOportunidade,
+      moveOportunidadeEtapa,
       gerarCodigoProjeto,
       recuperarRegistro,
     ]

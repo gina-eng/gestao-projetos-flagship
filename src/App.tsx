@@ -9,6 +9,8 @@ import { ClienteDetailPage } from "@/pages/ClienteDetail";
 import { InvestidoresPage } from "@/pages/Investidores";
 import { ProjetosPage } from "@/pages/Projetos";
 import { ProjetoDetailPage } from "@/pages/ProjetoDetail";
+import { OportunidadesPage } from "@/pages/Oportunidades";
+import { OportunidadeDetailPage } from "@/pages/OportunidadeDetail";
 import { ProdutosPage } from "@/pages/Produtos";
 import { FinanceiroPage } from "@/pages/Financeiro";
 import { AuditoriaPage } from "@/pages/Auditoria";
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="projetos/:id" element={<ProjetoDetailPage />} />
           <Route path="clientes" element={<ClientesPage />} />
           <Route path="clientes/:id" element={<ClienteDetailPage />} />
+          <Route path="oportunidades" element={<OportunidadesPage />} />
+          <Route path="oportunidades/:id" element={<OportunidadeDetailPage />} />
           <Route path="investidores" element={<InvestidoresPage />} />
           <Route path="produtos" element={<ProdutosPage />} />
           <Route path="financeiro" element={<FinanceiroPage />} />

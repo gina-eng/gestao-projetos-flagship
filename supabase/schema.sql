@@ -280,6 +280,35 @@ create table if not exists public.parcelas (
 create index if not exists idx_parcelas_pagamento on public.parcelas(pagamento_id);
 create index if not exists idx_parcelas_status on public.parcelas(status);
 
+-- Oportunidades de vendas (cross-sell/upsell a partir de clientes ativos)
+create table if not exists public.oportunidades (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid not null references public.clientes(id) on delete restrict,
+  produto_id text not null,                -- referencia products.id (catálogo V4)
+  variacao_id text,
+  nome text not null,
+  valor_estimado numeric(14,2) not null default 0,
+  modelo_cobranca text not null default 'recorrente'
+    check (modelo_cobranca in ('one_time','recorrente')),
+  lt_meses int,
+  origem_projeto_id uuid references public.projetos(id) on delete set null,
+  responsavel_id uuid references public.investidores(id) on delete set null,
+  etapa text not null default 'identificada'
+    check (etapa in ('identificada','em_negociacao','proposta_enviada','ganha','perdida')),
+  motivo_perda text,
+  proxima_acao text,
+  data_proxima_acao date,
+  data_fechamento_prevista date,
+  data_fechamento_real date,
+  observacoes text,
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+create index if not exists idx_oportunidades_cliente on public.oportunidades(cliente_id);
+create index if not exists idx_oportunidades_etapa on public.oportunidades(etapa);
+create index if not exists idx_oportunidades_responsavel on public.oportunidades(responsavel_id);
+
 -- Auditoria (append-only)
 create table if not exists public.auditoria (
   id uuid primary key default gen_random_uuid(),
@@ -314,7 +343,7 @@ do $$
 declare t text;
 begin
   for t in
-    select unnest(array['clientes','projetos','reunioes','investidores'])
+    select unnest(array['clientes','projetos','reunioes','investidores','oportunidades'])
   loop
     execute format(
       'drop trigger if exists trg_touch_%I on public.%I;
@@ -333,7 +362,7 @@ begin
     select unnest(array[
       'investidores','fases','clientes','contatos','conexoes',
       'projetos','squad_membros','reunioes','links_rapidos',
-      'pagamentos','parcelas','auditoria'
+      'pagamentos','parcelas','auditoria','oportunidades'
     ])
   loop
     execute format('alter table public.%I enable row level security;', t);

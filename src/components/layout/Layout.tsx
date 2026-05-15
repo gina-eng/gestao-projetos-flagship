@@ -10,6 +10,7 @@ import {
   History,
   LogOut,
   Menu,
+  Sparkles,
   X,
 } from "lucide-react";
 import { useApp } from "@/store";
@@ -25,6 +26,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/projetos", label: "Projetos", icon: KanbanSquare },
+  { to: "/oportunidades", label: "Oportunidades", icon: Sparkles },
   { to: "/clientes", label: "Clientes", icon: Users },
   { to: "/investidores", label: "Investidores", icon: Briefcase },
   { to: "/produtos", label: "Produtos", icon: Package },

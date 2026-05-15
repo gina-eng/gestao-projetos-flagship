@@ -130,6 +130,42 @@ export interface ReuniaoProjeto {
   proximos_passos?: string;
 }
 
+// Oportunidades de vendas — cross-sell/upsell pra clientes existentes.
+export type EtapaOportunidade =
+  | "identificada"
+  | "em_negociacao"
+  | "proposta_enviada"
+  | "ganha"
+  | "perdida";
+
+export type MotivoPerda =
+  | "preco"
+  | "concorrencia"
+  | "timing"
+  | "sem_fit"
+  | "sem_orcamento"
+  | "outro";
+
+export interface Oportunidade {
+  id: string;
+  cliente_id: string;
+  produto_id: string;
+  variacao_id?: string;
+  nome: string;
+  valor_estimado: number;
+  modelo_cobranca: "one_time" | "recorrente";
+  lt_meses?: number;
+  origem_projeto_id?: string; // projeto que originou (cross-sell)
+  responsavel_id?: string;    // investidor responsável
+  etapa: EtapaOportunidade;
+  motivo_perda?: MotivoPerda;
+  proxima_acao?: string;
+  data_proxima_acao?: string;
+  data_fechamento_prevista?: string;
+  data_fechamento_real?: string;
+  observacoes?: string;
+}
+
 export type TipoPagamento = "entrada" | "recorrente" | "parcelado";
 export type MetodoPagamento =
   | "boleto"
@@ -601,3 +637,33 @@ export const SENTIMENTO_REUNIAO_LABEL: Record<SentimentoReuniao, string> =
   Object.fromEntries(
     SENTIMENTOS_REUNIAO.map((s) => [s.value, s.label])
   ) as Record<SentimentoReuniao, string>;
+
+export const ETAPAS_OPORTUNIDADE: {
+  value: EtapaOportunidade;
+  label: string;
+  descricao: string;
+}[] = [
+  { value: "identificada",      label: "Identificada",     descricao: "Possibilidade detectada, ainda sem contato." },
+  { value: "em_negociacao",     label: "Em negociação",    descricao: "Conversa iniciada com o cliente." },
+  { value: "proposta_enviada",  label: "Proposta enviada", descricao: "Proposta comercial formal entregue." },
+  { value: "ganha",             label: "Ganha",            descricao: "Cliente aceitou — virou projeto." },
+  { value: "perdida",           label: "Perdida",          descricao: "Cliente recusou ou desistiu." },
+];
+
+export const ETAPA_OPORTUNIDADE_LABEL: Record<EtapaOportunidade, string> =
+  Object.fromEntries(
+    ETAPAS_OPORTUNIDADE.map((e) => [e.value, e.label])
+  ) as Record<EtapaOportunidade, string>;
+
+export const MOTIVOS_PERDA: { value: MotivoPerda; label: string }[] = [
+  { value: "preco",          label: "Preço acima do esperado" },
+  { value: "concorrencia",   label: "Foi para concorrência" },
+  { value: "timing",         label: "Momento não foi ideal" },
+  { value: "sem_fit",        label: "Sem fit com a oferta" },
+  { value: "sem_orcamento",  label: "Cliente sem orçamento" },
+  { value: "outro",          label: "Outro" },
+];
+
+export const MOTIVO_PERDA_LABEL: Record<MotivoPerda, string> = Object.fromEntries(
+  MOTIVOS_PERDA.map((m) => [m.value, m.label])
+) as Record<MotivoPerda, string>;
