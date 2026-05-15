@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, Filter, LayoutGrid, List as ListIcon, X, Columns } from "lucide-react";
+import { Plus, Filter, LayoutGrid, List as ListIcon, X, Columns, Search } from "lucide-react";
 import { useApp } from "@/store";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/Layout";
 import { ProjetoFormDialog } from "@/components/projetos/ProjetoFormDialog";
 import { ProjetoKanban } from "@/components/projetos/ProjetoKanban";
@@ -42,6 +43,7 @@ export function ProjetosPage() {
   const [filtroCategoria, setFiltroCategoria] = useState<CategoriaV4 | "all">("all");
   const [filtroTier, setFiltroTier] = useState<Tier | "all">("all");
   const [filtroSaude, setFiltroSaude] = useState<SaudeProjeto | "all">("all");
+  const [busca, setBusca] = useState("");
 
   useEffect(() => {
     const clienteParam = params.get("cliente");
@@ -53,6 +55,7 @@ export function ProjetosPage() {
   }, [params]);
 
   const filtrados = useMemo(() => {
+    const q = busca.trim().toLowerCase();
     return projetos.filter((p) => {
       if (p.status !== "ativo" && p.status !== "pausado") return false;
       const prod = produtos.find((pr) => pr.id === p.produto_id);
@@ -60,12 +63,28 @@ export function ProjetosPage() {
       if (filtroCategoria !== "all" && prod?.categoria !== filtroCategoria) return false;
       if (filtroTier !== "all" && cli?.tier !== filtroTier) return false;
       if (filtroSaude !== "all" && p.saude_atual !== filtroSaude) return false;
+      if (q) {
+        const haystack = [
+          p.nome,
+          p.codigo,
+          cli?.nome_fantasia,
+          cli?.razao_social,
+          prod?.nome,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [projetos, produtos, clientes, filtroCategoria, filtroTier, filtroSaude]);
+  }, [projetos, produtos, clientes, filtroCategoria, filtroTier, filtroSaude, busca]);
 
   const filtroAtivo =
-    filtroCategoria !== "all" || filtroTier !== "all" || filtroSaude !== "all";
+    filtroCategoria !== "all" ||
+    filtroTier !== "all" ||
+    filtroSaude !== "all" ||
+    busca.trim() !== "";
 
   return (
     <div className="spacing-section">
@@ -113,57 +132,70 @@ export function ProjetosPage() {
       />
 
       <Card>
-        <CardContent className="flex flex-wrap items-center gap-2 p-4">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-            <Filter className="h-3.5 w-3.5" />
-            Filtros:
+        <CardContent className="space-y-3 p-4">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por projeto, cliente, código ou produto"
+              className="pl-9"
+            />
           </div>
 
-          <FilterChip
-            label="Categoria"
-            value={filtroCategoria}
-            options={[
-              { value: "all", label: "Todas" },
-              ...CATEGORIAS.map((c) => ({ value: c.value, label: c.label })),
-            ]}
-            onChange={(v) => setFiltroCategoria(v as typeof filtroCategoria)}
-          />
-          <FilterChip
-            label="Tier"
-            value={filtroTier}
-            options={[
-              { value: "all", label: "Todos" },
-              ...TIERS.map((t) => ({ value: t.value, label: t.label })),
-            ]}
-            onChange={(v) => setFiltroTier(v as typeof filtroTier)}
-          />
-          <FilterChip
-            label="Saúde"
-            value={filtroSaude}
-            options={[
-              { value: "all", label: "Todas" },
-              { value: "saudavel", label: "Saudável" },
-              { value: "alerta", label: "Em alerta" },
-              { value: "cuidado", label: "Em cuidado" },
-              { value: "critico", label: "Crítico" },
-            ]}
-            onChange={(v) => setFiltroSaude(v as typeof filtroSaude)}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+              <Filter className="h-3.5 w-3.5" />
+              Filtros:
+            </div>
 
-          {filtroAtivo && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-7 text-xs"
-              onClick={() => {
-                setFiltroCategoria("all");
-                setFiltroTier("all");
-                setFiltroSaude("all");
-              }}
-            >
-              <X className="h-3 w-3" /> Limpar
-            </Button>
-          )}
+            <FilterChip
+              label="Categoria"
+              value={filtroCategoria}
+              options={[
+                { value: "all", label: "Todas" },
+                ...CATEGORIAS.map((c) => ({ value: c.value, label: c.label })),
+              ]}
+              onChange={(v) => setFiltroCategoria(v as typeof filtroCategoria)}
+            />
+            <FilterChip
+              label="Tier"
+              value={filtroTier}
+              options={[
+                { value: "all", label: "Todos" },
+                ...TIERS.map((t) => ({ value: t.value, label: t.label })),
+              ]}
+              onChange={(v) => setFiltroTier(v as typeof filtroTier)}
+            />
+            <FilterChip
+              label="Saúde"
+              value={filtroSaude}
+              options={[
+                { value: "all", label: "Todas" },
+                { value: "saudavel", label: "Saudável" },
+                { value: "alerta", label: "Em alerta" },
+                { value: "cuidado", label: "Em cuidado" },
+                { value: "critico", label: "Crítico" },
+              ]}
+              onChange={(v) => setFiltroSaude(v as typeof filtroSaude)}
+            />
+
+            {filtroAtivo && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-7 text-xs"
+                onClick={() => {
+                  setFiltroCategoria("all");
+                  setFiltroTier("all");
+                  setFiltroSaude("all");
+                  setBusca("");
+                }}
+              >
+                <X className="h-3 w-3" /> Limpar
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

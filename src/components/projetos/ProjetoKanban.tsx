@@ -126,11 +126,11 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
                             <span className={cn("h-2 w-2 rounded-full", saudeDot[p.saude_atual])} title={SAUDE_LABEL[p.saude_atual]} />
                           </div>
                           <p className="text-sm font-semibold leading-tight text-foreground">
-                            {p.nome}
+                            {cliente?.nome_fantasia ?? p.nome}
                           </p>
                           {cliente && (
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                              {cliente.nome_fantasia}
+                              {p.nome}
                             </p>
                           )}
 
