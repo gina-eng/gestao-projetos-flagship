@@ -32,21 +32,29 @@ export function InvestidoresPage() {
     const projetosDele = projetos.filter(
       (p) => p.status === "ativo" && p.squad.some((s) => s.investidor_id === invId)
     );
-    // Receita mensal: soma do valor_total dos projetos recorrentes (em
-    // recorrente, valor_total já representa o mensal).
-    const mensal = projetosDele
-      .filter((p) => p.modelo_cobranca === "recorrente")
-      .reduce((acc, p) => acc + p.valor_total, 0);
-    // TCV: soma do valor total do contrato de cada projeto. Em recorrente,
-    // usa valor_tcv ou (fallback) valor_total × lt_meses. Em one-time,
-    // valor_tcv ou valor_total.
-    const tcv = projetosDele.reduce((acc, p) => {
-      if (typeof p.valor_tcv === "number" && p.valor_tcv > 0) return acc + p.valor_tcv;
+    // TCV por projeto: prioriza valor_tcv; fallback recorrente = valor_total × lt_meses;
+    // fallback one-time = valor_total.
+    function tcvDoProjeto(p: typeof projetosDele[number]) {
+      if (typeof p.valor_tcv === "number" && p.valor_tcv > 0) return p.valor_tcv;
       if (p.modelo_cobranca === "recorrente") {
-        return acc + p.valor_total * (p.lt_meses ?? 0);
+        return p.valor_total * (p.lt_meses ?? 0);
       }
-      return acc + p.valor_total;
-    }, 0);
+      return p.valor_total;
+    }
+    // Mensal por projeto: recorrente = valor_total (já é o mensal);
+    // one-time / parcelado = TCV ÷ horizonte (lt_meses, com fallback em num_parcelas).
+    function mensalDoProjeto(p: typeof projetosDele[number]) {
+      if (p.modelo_cobranca === "recorrente") return p.valor_total;
+      const tcvP = tcvDoProjeto(p);
+      const meses = p.lt_meses && p.lt_meses > 0
+        ? p.lt_meses
+        : p.num_parcelas && p.num_parcelas > 0
+          ? p.num_parcelas
+          : 1;
+      return tcvP / meses;
+    }
+    const mensal = projetosDele.reduce((acc, p) => acc + mensalDoProjeto(p), 0);
+    const tcv = projetosDele.reduce((acc, p) => acc + tcvDoProjeto(p), 0);
     return { projetos: projetosDele.length, mensal, tcv };
   }
 
