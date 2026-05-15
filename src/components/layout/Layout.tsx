@@ -148,7 +148,7 @@ export function Layout() {
       )}
 
       {/* Main */}
-      <main className="main-shell flex-1 lg:pl-64">
+      <main className="main-shell flex-1 min-w-0 lg:pl-64">
         <div className="pt-[60px] lg:pt-0">
           <div className="w-full px-4 py-6 sm:px-6 lg:px-8 lg:py-10 xl:px-10 2xl:px-12 animate-fade-in">
             <Outlet />
