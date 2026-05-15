@@ -13,6 +13,7 @@ import { OportunidadesPage } from "@/pages/Oportunidades";
 import { OportunidadeDetailPage } from "@/pages/OportunidadeDetail";
 import { ProdutosPage } from "@/pages/Produtos";
 import { FinanceiroPage } from "@/pages/Financeiro";
+import { CalendarioPage } from "@/pages/Calendario";
 import { AuditoriaPage } from "@/pages/Auditoria";
 import { HandoffPage } from "@/pages/Handoff";
 
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="investidores" element={<InvestidoresPage />} />
           <Route path="produtos" element={<ProdutosPage />} />
           <Route path="financeiro" element={<FinanceiroPage />} />
+          <Route path="calendario" element={<CalendarioPage />} />
           <Route path="auditoria" element={<AuditoriaPage />} />
         </Route>
       </Routes>

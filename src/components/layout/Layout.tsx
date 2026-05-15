@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   Briefcase,
+  CalendarDays,
   KanbanSquare,
   Wallet,
   Package,
@@ -31,6 +32,7 @@ const NAV: NavItem[] = [
   { to: "/investidores", label: "Investidores", icon: Briefcase },
   { to: "/produtos", label: "Produtos", icon: Package },
   { to: "/financeiro", label: "Financeiro", icon: Wallet },
+  { to: "/calendario", label: "Calendário", icon: CalendarDays },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
