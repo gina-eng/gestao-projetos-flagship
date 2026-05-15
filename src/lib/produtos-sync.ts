@@ -1,4 +1,4 @@
-import { supabase, supabaseConfigurado } from "./supabase";
+import { supabaseCatalog, supabaseCatalogConfigurado } from "./supabase";
 import { CategoriaV4, Produto } from "@/types";
 
 // Schema REAL da tabela `products` no Supabase (V4):
@@ -72,15 +72,15 @@ export interface ResultadoSincronizacao {
 }
 
 export async function buscarProdutosSupabase(): Promise<ResultadoSincronizacao> {
-  if (!supabaseConfigurado() || !supabase) {
+  if (!supabaseCatalogConfigurado() || !supabaseCatalog) {
     return {
       ok: false,
       erro:
-        "Conexão com Supabase não configurada. Crie o arquivo .env.local com VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.",
+        "Catálogo Supabase não configurado. Defina VITE_SUPABASE_CATALOG_URL e VITE_SUPABASE_CATALOG_ANON_KEY no .env.local.",
     };
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseCatalog
     .from(TABELA)
     .select("id, produto, categoria, duracao, dono, valor")
     .order("produto", { ascending: true });
