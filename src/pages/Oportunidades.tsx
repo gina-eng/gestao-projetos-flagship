@@ -59,10 +59,10 @@ export function OportunidadesPage() {
 
   // Métricas rápidas no header
   const pipelineAtivo = oportunidades
-    .filter((o) => o.etapa !== "ganha" && o.etapa !== "perdida")
+    .filter((o) => o.etapa !== "fechado_ganho" && o.etapa !== "fechado_perdido")
     .reduce((acc, o) => acc + o.valor_estimado, 0);
   const ganhasTotal = oportunidades
-    .filter((o) => o.etapa === "ganha")
+    .filter((o) => o.etapa === "fechado_ganho")
     .reduce((acc, o) => acc + o.valor_estimado, 0);
 
   return (
@@ -115,8 +115,13 @@ export function OportunidadesPage() {
                 {formatCurrency(pipelineAtivo)}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                {oportunidades.filter((o) => o.etapa !== "ganha" && o.etapa !== "perdida").length} em
-                negociação
+                {
+                  oportunidades.filter(
+                    (o) =>
+                      o.etapa !== "fechado_ganho" &&
+                      o.etapa !== "fechado_perdido"
+                  ).length
+                } em andamento
               </p>
             </div>
           </CardContent>
@@ -128,13 +133,15 @@ export function OportunidadesPage() {
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Ganhas (TCV total)
+                Fechado ganho (TCV total)
               </p>
               <p className="text-base font-bold tabular-nums">
                 {formatCurrency(ganhasTotal)}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                {oportunidades.filter((o) => o.etapa === "ganha").length} oportunidades
+                {
+                  oportunidades.filter((o) => o.etapa === "fechado_ganho").length
+                } oportunidades
               </p>
             </div>
           </CardContent>
@@ -146,10 +153,10 @@ export function OportunidadesPage() {
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Perdidas
+                Fechado perdido
               </p>
               <p className="text-base font-bold tabular-nums">
-                {oportunidades.filter((o) => o.etapa === "perdida").length}
+                {oportunidades.filter((o) => o.etapa === "fechado_perdido").length}
               </p>
             </div>
           </CardContent>

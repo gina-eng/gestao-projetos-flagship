@@ -280,7 +280,9 @@ create table if not exists public.parcelas (
 create index if not exists idx_parcelas_pagamento on public.parcelas(pagamento_id);
 create index if not exists idx_parcelas_status on public.parcelas(status);
 
--- Oportunidades de vendas (cross-sell/upsell a partir de clientes ativos)
+-- Oportunidades de vendas (cross-sell/upsell a partir de clientes ativos).
+-- Vinculada APENAS ao cliente, não a projeto.
+-- 4 etapas: identificada → avancando → fechado_ganho / fechado_perdido
 create table if not exists public.oportunidades (
   id uuid primary key default gen_random_uuid(),
   cliente_id uuid not null references public.clientes(id) on delete restrict,
@@ -291,10 +293,9 @@ create table if not exists public.oportunidades (
   modelo_cobranca text not null default 'recorrente'
     check (modelo_cobranca in ('one_time','recorrente')),
   lt_meses int,
-  origem_projeto_id uuid references public.projetos(id) on delete set null,
   responsavel_id uuid references public.investidores(id) on delete set null,
   etapa text not null default 'identificada'
-    check (etapa in ('identificada','em_negociacao','proposta_enviada','ganha','perdida')),
+    check (etapa in ('identificada','avancando','fechado_ganho','fechado_perdido')),
   motivo_perda text,
   proxima_acao text,
   data_proxima_acao date,
@@ -308,6 +309,33 @@ create table if not exists public.oportunidades (
 create index if not exists idx_oportunidades_cliente on public.oportunidades(cliente_id);
 create index if not exists idx_oportunidades_etapa on public.oportunidades(etapa);
 create index if not exists idx_oportunidades_responsavel on public.oportunidades(responsavel_id);
+
+-- ─── Migração 2026-05: 5 etapas → 4 etapas + remove origem_projeto_id ────
+-- Idempotente: detecta dados antigos e migra. Sem efeito se já está OK.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'oportunidades'
+      and column_name = 'origem_projeto_id'
+  ) then
+    alter table public.oportunidades drop column origem_projeto_id;
+  end if;
+end$$;
+
+-- Drop check antigo (5 etapas) se ainda existir, migra dados, recria check.
+alter table public.oportunidades drop constraint if exists oportunidades_etapa_check;
+
+update public.oportunidades set etapa = 'avancando'
+  where etapa in ('em_negociacao', 'proposta_enviada');
+update public.oportunidades set etapa = 'fechado_ganho'
+  where etapa = 'ganha';
+update public.oportunidades set etapa = 'fechado_perdido'
+  where etapa = 'perdida';
+
+alter table public.oportunidades add constraint oportunidades_etapa_check
+  check (etapa in ('identificada','avancando','fechado_ganho','fechado_perdido'));
 
 -- Auditoria (append-only)
 create table if not exists public.auditoria (

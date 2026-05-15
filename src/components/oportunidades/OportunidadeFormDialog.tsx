@@ -50,7 +50,7 @@ export function OportunidadeFormDialog({
   onOpenChange,
   clientePreSelect,
 }: Props) {
-  const { clientes, produtos, investidores, projetos, saveOportunidade } = useApp();
+  const { clientes, produtos, investidores, saveOportunidade } = useApp();
   const [form, setForm] = useState<Oportunidade>(empty());
   const [categoria, setCategoria] = useState<CategoriaV4 | "">("");
   const [erros, setErros] = useState<Record<string, string>>({});
@@ -79,12 +79,6 @@ export function OportunidadeFormDialog({
         (p) => p.ativo && (!categoria || p.categoria === categoria)
       ),
     [produtos, categoria]
-  );
-
-  // Projetos ativos do cliente — pra marcar origem (cross-sell)
-  const projetosCliente = useMemo(
-    () => projetos.filter((p) => p.cliente_id === form.cliente_id && p.status === "ativo"),
-    [projetos, form.cliente_id]
   );
 
   function setField<K extends keyof Oportunidade>(k: K, v: Oportunidade[K]) {
@@ -302,30 +296,6 @@ export function OportunidadeFormDialog({
               </div>
             )}
           </div>
-
-          {projetosCliente.length > 0 && (
-            <div className="space-y-1.5">
-              <Label>Projeto que originou (cross-sell)</Label>
-              <Select
-                value={form.origem_projeto_id || undefined}
-                onValueChange={(v) => setField("origem_projeto_id", v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Opcional" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projetosCliente.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.codigo} · {p.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">
-                Indique se essa oportunidade veio de um projeto existente do cliente.
-              </p>
-            </div>
-          )}
 
           <div className="space-y-1.5">
             <Label>Observações</Label>

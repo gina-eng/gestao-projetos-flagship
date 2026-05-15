@@ -1241,11 +1241,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...o,
         etapa: novaEtapa,
         data_fechamento_real:
-          novaEtapa === "ganha" || novaEtapa === "perdida"
+          novaEtapa === "fechado_ganho" || novaEtapa === "fechado_perdido"
             ? new Date().toISOString().slice(0, 10)
             : undefined,
-        // Limpa motivo de perda se sair de "perdida"
-        motivo_perda: novaEtapa === "perdida" ? o.motivo_perda : undefined,
+        // Limpa motivo de perda se sair de "fechado_perdido"
+        motivo_perda: novaEtapa === "fechado_perdido" ? o.motivo_perda : undefined,
       };
       const cli = state.clientes.find((c) => c.id === o.cliente_id);
       const registro = fazerRegistro(

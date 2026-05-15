@@ -651,7 +651,6 @@ function rowToOportunidade(r: Record<string, unknown>): Oportunidade {
     valor_estimado: Number(r.valor_estimado),
     modelo_cobranca: r.modelo_cobranca as Oportunidade["modelo_cobranca"],
     lt_meses: (r.lt_meses as number) ?? undefined,
-    origem_projeto_id: (r.origem_projeto_id as string) ?? undefined,
     responsavel_id: (r.responsavel_id as string) ?? undefined,
     etapa: r.etapa as Oportunidade["etapa"],
     motivo_perda: (r.motivo_perda as Oportunidade["motivo_perda"]) ?? undefined,
@@ -673,7 +672,6 @@ export async function upsertOportunidade(o: Oportunidade): Promise<void> {
     valor_estimado: o.valor_estimado,
     modelo_cobranca: o.modelo_cobranca,
     lt_meses: o.lt_meses ?? null,
-    origem_projeto_id: o.origem_projeto_id ?? null,
     responsavel_id: o.responsavel_id ?? null,
     etapa: o.etapa,
     motivo_perda: o.motivo_perda ?? null,
@@ -691,7 +689,7 @@ export async function moveOportunidadeEtapa(
   etapa: Oportunidade["etapa"]
 ): Promise<void> {
   const patch: Record<string, unknown> = { etapa };
-  if (etapa === "ganha" || etapa === "perdida") {
+  if (etapa === "fechado_ganho" || etapa === "fechado_perdido") {
     patch.data_fechamento_real = new Date().toISOString().slice(0, 10);
   } else {
     patch.data_fechamento_real = null;

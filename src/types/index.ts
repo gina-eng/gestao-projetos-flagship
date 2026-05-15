@@ -131,12 +131,12 @@ export interface ReuniaoProjeto {
 }
 
 // Oportunidades de vendas — cross-sell/upsell pra clientes existentes.
+// Vinculada apenas ao cliente (não a projeto específico).
 export type EtapaOportunidade =
   | "identificada"
-  | "em_negociacao"
-  | "proposta_enviada"
-  | "ganha"
-  | "perdida";
+  | "avancando"
+  | "fechado_ganho"
+  | "fechado_perdido";
 
 export type MotivoPerda =
   | "preco"
@@ -155,7 +155,6 @@ export interface Oportunidade {
   valor_estimado: number;
   modelo_cobranca: "one_time" | "recorrente";
   lt_meses?: number;
-  origem_projeto_id?: string; // projeto que originou (cross-sell)
   responsavel_id?: string;    // investidor responsável
   etapa: EtapaOportunidade;
   motivo_perda?: MotivoPerda;
@@ -643,11 +642,10 @@ export const ETAPAS_OPORTUNIDADE: {
   label: string;
   descricao: string;
 }[] = [
-  { value: "identificada",      label: "Identificada",     descricao: "Possibilidade detectada, ainda sem contato." },
-  { value: "em_negociacao",     label: "Em negociação",    descricao: "Conversa iniciada com o cliente." },
-  { value: "proposta_enviada",  label: "Proposta enviada", descricao: "Proposta comercial formal entregue." },
-  { value: "ganha",             label: "Ganha",            descricao: "Cliente aceitou — virou projeto." },
-  { value: "perdida",           label: "Perdida",          descricao: "Cliente recusou ou desistiu." },
+  { value: "identificada",     label: "Identificado",     descricao: "Possibilidade detectada, ainda sem contato." },
+  { value: "avancando",        label: "Avançando",        descricao: "Conversa em andamento ou proposta enviada." },
+  { value: "fechado_ganho",    label: "Fechado ganho",    descricao: "Cliente aceitou — virou projeto." },
+  { value: "fechado_perdido",  label: "Fechado perdido",  descricao: "Cliente recusou ou desistiu." },
 ];
 
 export const ETAPA_OPORTUNIDADE_LABEL: Record<EtapaOportunidade, string> =

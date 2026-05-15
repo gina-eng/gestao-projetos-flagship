@@ -49,7 +49,6 @@ export function OportunidadeDetailPage() {
     clientes,
     produtos,
     investidores,
-    projetos,
     auditoria,
     saveOportunidade,
     deleteOportunidade,
@@ -124,7 +123,7 @@ export function OportunidadeDetailPage() {
     if (!d.produto_id) e.produto_id = "Selecione um produto";
     if (!d.nome.trim()) e.nome = "Obrigatório";
     if (d.valor_estimado <= 0) e.valor_estimado = "Valor maior que zero";
-    if (d.etapa === "perdida" && !d.motivo_perda)
+    if (d.etapa === "fechado_perdido" && !d.motivo_perda)
       e.motivo_perda = "Selecione o motivo da perda";
     return e;
   }
@@ -158,16 +157,11 @@ export function OportunidadeDetailPage() {
   const produto = produtos.find((p) => p.id === draft.produto_id);
   const responsavel = investidores.find((i) => i.id === draft.responsavel_id);
   const categoria = CATEGORIAS.find((c) => c.value === produto?.categoria);
-  const projetoOrigem = projetos.find((p) => p.id === draft.origem_projeto_id);
   const produtoSelecionadoCat = produto?.categoria;
   const produtosFiltrados = produtos.filter(
     (p) =>
       p.ativo &&
       (!produtoSelecionadoCat || p.categoria === produtoSelecionadoCat)
-  );
-
-  const projetosDoCliente = projetos.filter(
-    (p) => p.cliente_id === draft.cliente_id && p.status === "ativo"
   );
 
   const auditoriaOpo = auditoria.filter((a) => a.entidade_id === draft.id);
@@ -362,37 +356,6 @@ export function OportunidadeDetailPage() {
             </Field>
           )}
 
-          {projetosDoCliente.length > 0 && (
-            <Field label="Projeto que originou (cross-sell)">
-              <Select
-                value={draft.origem_projeto_id || undefined}
-                onValueChange={(v) =>
-                  setField("origem_projeto_id", v || undefined)
-                }
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projetosDoCliente.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.codigo} · {p.nome}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {projetoOrigem && (
-                <Link
-                  to={`/projetos/${projetoOrigem.id}`}
-                  className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  Abrir projeto
-                </Link>
-              )}
-            </Field>
-          )}
-
           <Field label="Etapa">
             <Select
               value={draft.etapa}
@@ -411,7 +374,7 @@ export function OportunidadeDetailPage() {
             </Select>
           </Field>
 
-          {draft.etapa === "perdida" && (
+          {draft.etapa === "fechado_perdido" && (
             <Field
               label="Motivo da perda"
               error={errors.motivo_perda}
@@ -468,7 +431,8 @@ export function OportunidadeDetailPage() {
             />
           </Field>
 
-          {(draft.etapa === "ganha" || draft.etapa === "perdida") && (
+          {(draft.etapa === "fechado_ganho" ||
+            draft.etapa === "fechado_perdido") && (
             <Field label="Data de fechamento real">
               <Input
                 type="date"

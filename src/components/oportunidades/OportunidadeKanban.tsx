@@ -13,10 +13,9 @@ import {
 
 const ETAPA_TONE: Record<EtapaOportunidade, string> = {
   identificada: "bg-slate-100 text-slate-700",
-  em_negociacao: "bg-amber-100 text-amber-800",
-  proposta_enviada: "bg-blue-100 text-blue-800",
-  ganha: "bg-emerald-100 text-emerald-800",
-  perdida: "bg-rose-100 text-rose-800",
+  avancando: "bg-amber-100 text-amber-800",
+  fechado_ganho: "bg-emerald-100 text-emerald-800",
+  fechado_perdido: "bg-rose-100 text-rose-800",
 };
 
 export function OportunidadeKanban({
