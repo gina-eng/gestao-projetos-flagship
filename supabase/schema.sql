@@ -13,40 +13,76 @@
 -- ─── EXTENSÕES ────────────────────────────────────────────────────────────
 create extension if not exists "pgcrypto" with schema extensions;
 
--- ─── DOMAIN GUARD (apenas @v4company.com) ─────────────────────────────────
--- Bloqueia signup de qualquer email que não termine em @v4company.com.
-create or replace function public.enforce_v4company_domain()
+-- ─── CONSTANTES DE ACESSO ─────────────────────────────────────────────────
+-- Quem pode acessar:
+--   1. gina@v4company.com (admin master, passe livre)
+--   2. Qualquer e-mail que esteja cadastrado em `public.investidores` com
+--      status = 'ativo'.
+-- E-mails de outros domínios são sempre bloqueados.
+
+-- Função pública (sem auth) que diz se um e-mail tem permissão.
+-- Usada pelo frontend antes do signup/login pra mostrar mensagem amigável.
+create or replace function public.is_authorized(email_check text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with norm as (select lower(coalesce(email_check, '')) as e)
+  select coalesce(
+    (select e from norm) = 'gina@v4company.com'
+    or exists (
+      select 1 from public.investidores i, norm
+      where lower(i.email) = norm.e
+        and i.status = 'ativo'
+    ),
+    false
+  );
+$$;
+
+-- Permite que qualquer um (anon + authenticated) chame is_authorized.
+grant execute on function public.is_authorized(text) to anon, authenticated;
+
+-- ─── GUARD DE SIGNUP ──────────────────────────────────────────────────────
+-- Bloqueia inserções em auth.users que não passem na is_authorized().
+create or replace function public.enforce_investidor_ou_admin()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_email text := lower(coalesce(new.email, ''));
 begin
-  if new.email is null
-     or position('@v4company.com' in lower(new.email)) = 0
-     or right(lower(new.email), length('@v4company.com')) <> '@v4company.com' then
+  -- Domínio @v4company.com obrigatório (defesa adicional).
+  if right(v_email, length('@v4company.com')) <> '@v4company.com' then
     raise exception 'Apenas e-mails @v4company.com podem se cadastrar.';
+  end if;
+  -- Admin master ou investidor ativo.
+  if not public.is_authorized(v_email) then
+    raise exception 'E-mail não autorizado. Solicite o cadastro como investidor ativo.';
   end if;
   return new;
 end;
 $$;
 
+-- Remove trigger antigo (se existir) e cria o novo.
 drop trigger if exists on_auth_user_created_check_domain on auth.users;
-create trigger on_auth_user_created_check_domain
+drop trigger if exists on_auth_user_created_check_access on auth.users;
+create trigger on_auth_user_created_check_access
   before insert on auth.users
-  for each row execute function public.enforce_v4company_domain();
+  for each row execute function public.enforce_investidor_ou_admin();
 
--- ─── HELPER: usuário é @v4company.com? ────────────────────────────────────
--- Usado nas policies de RLS. Verifica o JWT da requisição atual.
+-- ─── HELPER: usuário autenticado tem permissão? ──────────────────────────
+-- Usado nas policies de RLS. Lê o e-mail do JWT da requisição atual e
+-- delega para is_authorized().
 create or replace function public.is_v4company_user()
 returns boolean
 language sql
 stable
 as $$
-  select coalesce(
-    right(lower((auth.jwt() ->> 'email')::text), length('@v4company.com')) = '@v4company.com',
-    false
-  );
+  select public.is_authorized((auth.jwt() ->> 'email')::text);
 $$;
 
 -- ─── TABELAS ──────────────────────────────────────────────────────────────

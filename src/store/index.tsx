@@ -263,6 +263,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [usuarioId]);
 
+  // Verifica se um e-mail tem permissão de acesso (gina@v4company.com ou
+  // investidor ativo cadastrado). Chama a RPC pública `is_authorized`.
+  async function checarAutorizacao(email: string): Promise<boolean> {
+    if (!supabase) return false;
+    const emailNorm = email.trim().toLowerCase();
+    if (emailNorm === "gina@v4company.com") return true; // fallback caso RPC falhe
+    const { data, error } = await supabase.rpc("is_authorized", {
+      email_check: emailNorm,
+    });
+    if (error) {
+      console.error("[is_authorized] RPC falhou:", error);
+      return false;
+    }
+    return Boolean(data);
+  }
+
   const login = useCallback(
     async (email: string, senha: string): Promise<AuthResult> => {
       if (!supabase) {
@@ -286,6 +302,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         return { ok: false, erro: error.message };
       }
+      // Pós-login: garante que o usuário ainda tem autorização. Se foi
+      // removido da lista de investidores, encerra a sessão.
+      const autorizado = await checarAutorizacao(email);
+      if (!autorizado) {
+        await supabase.auth.signOut();
+        return {
+          ok: false,
+          erro:
+            "Sua conta não está mais autorizada. Solicite o cadastro como investidor ativo.",
+        };
+      }
       return { ok: true };
     },
     []
@@ -303,6 +330,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           erro: "Acesso restrito a e-mails @v4company.com.",
         };
       }
+      // Pre-check: só deixa criar conta quem é admin ou investidor ativo.
+      const autorizado = await checarAutorizacao(emailNorm);
+      if (!autorizado) {
+        return {
+          ok: false,
+          erro:
+            "E-mail não autorizado. Solicite o cadastro como investidor ativo antes de criar a conta.",
+        };
+      }
       const { error } = await supabase.auth.signUp({
         email: emailNorm,
         password: senha,
@@ -316,10 +352,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (msg.includes("already registered") || msg.includes("already exists")) {
           return { ok: false, erro: "Esse e-mail já está cadastrado." };
         }
-        if (msg.includes("v4company")) {
+        if (msg.includes("v4company") || msg.includes("autorizado") || msg.includes("investidor")) {
           return {
             ok: false,
-            erro: "Apenas e-mails @v4company.com podem se cadastrar.",
+            erro:
+              "E-mail não autorizado. Solicite o cadastro como investidor ativo.",
           };
         }
         return { ok: false, erro: error.message };
@@ -351,6 +388,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, sessao: null }));
   }, []);
 
+  // ─── Helper: notificar erro de operação ───────────────────────────────
+  // Mostra alert simples + console.error. Substituível depois por toast.
+  function notificarErro(operacao: string, err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[${operacao}] falha:`, err);
+    if (typeof window !== "undefined") {
+      window.alert(`Erro ao ${operacao}: ${msg}`);
+    }
+  }
+
   // ─── Helper para persistir auditoria (best-effort) ───────────────────
   // Falha silenciosa: log no console mas não interrompe o fluxo. Auditoria
   // é importante, mas não bloqueia operações de negócio.
@@ -373,7 +420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertCliente(cliente);
       } catch (err) {
-        console.error("[saveCliente] falha:", err);
+        notificarErro("salvar cliente", err);
         return;
       }
       setState((s) => ({
@@ -407,7 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.softDeleteCliente(id);
       } catch (err) {
-        console.error("[deleteCliente] falha:", err);
+        notificarErro("remover cliente", err);
         return;
       }
       const novo: Cliente = { ...cli, status: "inativo" };
@@ -446,7 +493,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.moveClienteStatus(clienteId, novoStatus);
       } catch (err) {
-        console.error("[moveClienteStatus] falha:", err);
+        notificarErro("mover cliente", err);
         return;
       }
       const registro = fazerRegistro(
@@ -478,7 +525,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertInvestidor(inv);
       } catch (err) {
-        console.error("[saveInvestidor] falha:", err);
+        notificarErro("salvar investidor", err);
         return;
       }
       setState((s) => ({
@@ -512,7 +559,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.deleteInvestidor(id);
       } catch (err) {
-        console.error("[deleteInvestidor] falha:", err);
+        notificarErro("remover investidor", err);
         return;
       }
       const novo: Investidor = { ...inv, status: "inativo" };
@@ -614,7 +661,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertProjeto(projeto);
       } catch (err) {
-        console.error("[saveProjeto] falha:", err);
+        notificarErro("salvar projeto", err);
         return;
       }
       setState((s) => ({
@@ -648,7 +695,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.softDeleteProjeto(id);
       } catch (err) {
-        console.error("[deleteProjeto] falha:", err);
+        notificarErro("remover projeto", err);
         return;
       }
       const novo: Projeto = { ...prj, status: "concluido" };
@@ -681,7 +728,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.moveProjetoFase(projetoId, novaFase);
       } catch (err) {
-        console.error("[moveProjetoFase] falha:", err);
+        notificarErro("mover projeto", err);
         return;
       }
       const registro = fazerRegistro(
@@ -713,7 +760,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertPagamento(pag);
       } catch (err) {
-        console.error("[savePagamento] falha:", err);
+        notificarErro("salvar pagamento", err);
         return;
       }
       setState((s) => ({
@@ -754,7 +801,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.softDeletePagamento(id);
       } catch (err) {
-        console.error("[deletePagamento] falha:", err);
+        notificarErro("remover pagamento", err);
         return;
       }
       const novo: Pagamento = { ...pag, status_geral: "cancelado" };
@@ -791,7 +838,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertParcela(parcela);
       } catch (err) {
-        console.error("[atualizarParcela] falha:", err);
+        notificarErro("atualizar parcela", err);
         return;
       }
       const novoPag = {
@@ -837,7 +884,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.upsertFase(fase);
       } catch (err) {
-        console.error("[saveFase] falha:", err);
+        notificarErro("salvar fase", err);
         return;
       }
       const registro = fazerRegistro(
@@ -904,7 +951,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.deleteFase(id);
       } catch (err) {
-        console.error("[deleteFase] falha:", err);
+        notificarErro("remover fase", err);
         return "Falha ao excluir no servidor.";
       }
       const registro = fazerRegistro(
@@ -934,7 +981,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         await api.reordenarFases(idsEmOrdem);
       } catch (err) {
-        console.error("[reordenarFases] falha:", err);
+        notificarErro("reordenar fases", err);
         return;
       }
       const novas = state.fases
