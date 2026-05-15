@@ -243,11 +243,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, isLoading: true, loadError: null }));
     api
       .fetchTudo()
-      .then((dados) => {
+      .then(async (dados) => {
         if (cancelled) return;
+        // Reconcilia status dos clientes com a realidade dos projetos antes
+        // de renderizar (corrige inconsistências de versões anteriores).
+        const ajustes: { id: string; novo: Cliente["status"] }[] = [];
+        for (const cli of dados.clientes) {
+          if (cli.status === "churn") continue;
+          const temAtivo = dados.projetos.some(
+            (p) => p.cliente_id === cli.id && p.status === "ativo"
+          );
+          let novo: Cliente["status"];
+          if (temAtivo) {
+            novo = "ativo";
+          } else if (cli.status === "em_fechamento") {
+            continue; // preserva em_fechamento sem projetos
+          } else {
+            novo = "inativo";
+          }
+          if (cli.status !== novo) ajustes.push({ id: cli.id, novo });
+        }
+        // Aplica em paralelo no banco; ignora falhas individuais.
+        await Promise.allSettled(
+          ajustes.map((a) => api.moveClienteStatus(a.id, a.novo))
+        );
+        // Espelha no state.
+        const clientesAjustados = dados.clientes.map((c) => {
+          const ajuste = ajustes.find((a) => a.id === c.id);
+          return ajuste ? { ...c, status: ajuste.novo } : c;
+        });
         setState((s) => ({
           ...s,
-          clientes: dados.clientes,
+          clientes: clientesAjustados,
           investidores: dados.investidores,
           fases: dados.fases.length > 0 ? dados.fases : FASES_DEFAULT,
           projetos: dados.projetos,
@@ -418,10 +445,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   // ─── Auto-status do cliente baseado em projetos ativos ────────────────
-  // Regra: cliente "ativo" sem nenhum projeto ativo → vira "inativo".
-  //        cliente "inativo" com pelo menos 1 projeto ativo → vira "ativo".
-  // Não interfere em clientes "em_fechamento" ou "churn" (estados manuais).
-  // Recebe a lista de projetos pra evitar stale closure depois de mutar.
+  // Regra:
+  //   - Cliente com 1+ projeto ativo: vai pra "ativo" (de qualquer estado
+  //     exceto "churn").
+  //   - Cliente "ativo" SEM projeto ativo: vai pra "inativo".
+  //   - Cliente "em_fechamento" SEM projeto: mantém em_fechamento (estado
+  //     inicial, ainda em negociação — preserva escolha manual).
+  //   - Cliente "inativo" continua inativo enquanto não tiver projeto.
+  //   - "churn" nunca muda automaticamente (estado terminal manual).
+  // Recebe as listas correntes pra evitar stale closure depois de mutar.
   const reavaliarStatusCliente = useCallback(
     async (
       clienteId: string,
@@ -430,11 +462,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ) => {
       const cli = clientesCorrentes.find((c) => c.id === clienteId);
       if (!cli) return;
-      if (cli.status !== "ativo" && cli.status !== "inativo") return;
+      if (cli.status === "churn") return; // churn é manual, não toca
       const temAtivo = projetosCorrentes.some(
         (p) => p.cliente_id === clienteId && p.status === "ativo"
       );
-      const novoStatus: Cliente["status"] = temAtivo ? "ativo" : "inativo";
+      let novoStatus: Cliente["status"];
+      if (temAtivo) {
+        novoStatus = "ativo";
+      } else {
+        // Sem projeto ativo. Se está em em_fechamento (sem nada), preserva.
+        // Se está ativo (perdeu o projeto), vira inativo.
+        if (cli.status === "em_fechamento") return;
+        novoStatus = "inativo";
+      }
       if (cli.status === novoStatus) return;
       try {
         await api.moveClienteStatus(clienteId, novoStatus);
@@ -452,7 +492,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo:
             novoStatus === "inativo"
               ? "Cliente marcado como inativo (sem projetos ativos)"
-              : "Cliente reativado (projeto ativo detectado)",
+              : "Cliente marcado como ativo (projeto ativo detectado)",
           mudancas: [
             { campo: "status", label: "Status", de: cli.status, para: novoStatus },
           ],
