@@ -97,7 +97,7 @@ export function FasesManagerDialog({ open, onOpenChange }: Props) {
     setErro(null);
   }
 
-  function handleSubmit(ev: FormEvent) {
+  async function handleSubmit(ev: FormEvent) {
     ev.preventDefault();
     setErro(null);
 
@@ -106,7 +106,7 @@ export function FasesManagerDialog({ open, onOpenChange }: Props) {
     const idsRestantes = new Set(lista.map((f) => f.id));
     const removidas = fases.filter((f) => !idsRestantes.has(f.id));
     for (const r of removidas) {
-      const err = deleteFase(r.id);
+      const err = await deleteFase(r.id);
       if (err) {
         setErro(err);
         return;

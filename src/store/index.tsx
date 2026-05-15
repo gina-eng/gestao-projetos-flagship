@@ -18,7 +18,7 @@ import {
   Usuario,
 } from "@/types";
 import { readKey, STORAGE_KEYS, writeKey } from "./storage";
-import { seedInicial } from "./seed";
+import * as api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { uid } from "@/lib/utils";
 import {
@@ -39,8 +39,12 @@ interface AppState {
   pagamentos: Pagamento[];
   fases: Fase[];
   auditoria: RegistroAuditoria[];
-  usuarios: Usuario[];
+  usuarios: Usuario[];          // mantido só por retrocompat; Auth via Supabase
   sessao: Sessao | null;
+  // True enquanto o estado inicial está sendo carregado do Supabase.
+  isLoading: boolean;
+  // Erro do último fetch global (null se OK).
+  loadError: string | null;
 }
 
 export interface AuthResult {
@@ -54,31 +58,38 @@ interface AppActions {
   resetPassword: (email: string) => Promise<AuthResult>;
   logout: () => Promise<void>;
 
-  saveCliente: (cliente: Cliente) => void;
-  deleteCliente: (id: string) => void;
-  moveClienteStatus: (clienteId: string, novoStatus: Cliente["status"]) => void;
+  saveCliente: (cliente: Cliente) => Promise<void>;
+  deleteCliente: (id: string) => Promise<void>;
+  moveClienteStatus: (clienteId: string, novoStatus: Cliente["status"]) => Promise<void>;
 
-  saveInvestidor: (inv: Investidor) => void;
-  deleteInvestidor: (id: string) => void;
+  saveInvestidor: (inv: Investidor) => Promise<void>;
+  deleteInvestidor: (id: string) => Promise<void>;
 
   // Catálogo de produtos: read-only no front. A função abaixo é o ponto de
   // entrada para sincronizar com o banco externo (V4). Hoje recebe o payload
   // já pronto; amanhã será chamada pelo job/integração.
   sincronizarProdutos: (produtos: Produto[]) => void;
 
-  saveProjeto: (projeto: Projeto) => void;
-  deleteProjeto: (id: string) => void;
-  moveProjetoFase: (projetoId: string, novaFase: Projeto["fase_atual"]) => void;
+  saveProjeto: (projeto: Projeto) => Promise<void>;
+  deleteProjeto: (id: string) => Promise<void>;
+  moveProjetoFase: (projetoId: string, novaFase: Projeto["fase_atual"]) => Promise<void>;
 
-  savePagamento: (pag: Pagamento) => void;
-  deletePagamento: (id: string) => void;
-  atualizarParcela: (pagamentoId: string, parcela: Parcela) => void;
+  savePagamento: (pag: Pagamento) => Promise<void>;
+  deletePagamento: (id: string) => Promise<void>;
+  atualizarParcela: (pagamentoId: string, parcela: Parcela) => Promise<void>;
 
   // Fases do kanban (CRUD + reordenar). deleteFase devolve mensagem de erro
   // quando há projetos vinculados; null = ok.
-  saveFase: (fase: Fase) => void;
-  deleteFase: (id: string) => string | null;
-  reordenarFases: (idsEmOrdem: string[]) => void;
+  saveFase: (fase: Fase) => Promise<void>;
+  deleteFase: (id: string) => Promise<string | null>;
+  reordenarFases: (idsEmOrdem: string[]) => Promise<void>;
+
+  // Importa dados que estão no localStorage para o Supabase (one-shot).
+  importarLocalStorage: () => Promise<{
+    ok: boolean;
+    detalhes: Record<string, number>;
+    erro?: string;
+  }>;
 }
 
 type AppContextValue = AppState & AppActions & { gerarCodigoProjeto: (clienteId: string) => string };
@@ -119,28 +130,10 @@ function fazerRegistro(
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
+  // Estado inicial vazio. Os dados vêm do Supabase após o login.
+  // `produtos` continua persistido em localStorage porque é cache do
+  // catálogo externo (V4), sincronizado sob demanda.
   const [state, setState] = useState<AppState>(() => {
-    const seedDone = readKey(STORAGE_KEYS.seedDone, false);
-    if (!seedDone) {
-      const seeded = seedInicial();
-      writeKey(STORAGE_KEYS.clientes, seeded.clientes);
-      writeKey(STORAGE_KEYS.investidores, seeded.investidores);
-      writeKey(STORAGE_KEYS.produtos, seeded.produtos);
-      writeKey(STORAGE_KEYS.projetos, seeded.projetos);
-      writeKey(STORAGE_KEYS.pagamentos, seeded.pagamentos);
-      writeKey(STORAGE_KEYS.usuarios, seeded.usuarios);
-      writeKey(STORAGE_KEYS.fases, seeded.fases);
-      writeKey(STORAGE_KEYS.auditoria, []);
-      writeKey(STORAGE_KEYS.seedDone, true);
-      return {
-        ...seeded,
-        auditoria: [],
-        sessao: readKey<Sessao | null>(STORAGE_KEYS.sessao, null),
-      };
-    }
-    // Migração defensiva: corrige produtos antigos que possam ter categoria
-    // em lowercase (versões prévias do mapper do Supabase). Garante que
-    // todo produto no store tenha categoria UPPERCASE válida.
     const produtosBrutos = readKey<Produto[]>(STORAGE_KEYS.produtos, []);
     const produtosNormalizados = produtosBrutos.map((p) => {
       const catNorm = (p.categoria ?? "").toString().toUpperCase();
@@ -153,30 +146,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     return {
-      clientes: readKey<Cliente[]>(STORAGE_KEYS.clientes, []),
-      investidores: readKey<Investidor[]>(STORAGE_KEYS.investidores, []),
+      clientes: [],
+      investidores: [],
       produtos: produtosNormalizados,
-      projetos: readKey<Projeto[]>(STORAGE_KEYS.projetos, []),
-      pagamentos: readKey<Pagamento[]>(STORAGE_KEYS.pagamentos, []),
-      fases: readKey<Fase[]>(STORAGE_KEYS.fases, FASES_DEFAULT),
-      auditoria: readKey<RegistroAuditoria[]>(STORAGE_KEYS.auditoria, []),
-      usuarios: readKey<Usuario[]>(STORAGE_KEYS.usuarios, []),
-      sessao: readKey<Sessao | null>(STORAGE_KEYS.sessao, null),
+      projetos: [],
+      pagamentos: [],
+      fases: FASES_DEFAULT,
+      auditoria: [],
+      usuarios: [],
+      sessao: null,
+      isLoading: false,
+      loadError: null,
     };
   });
 
-  useEffect(() => writeKey(STORAGE_KEYS.clientes, state.clientes), [state.clientes]);
-  useEffect(() => writeKey(STORAGE_KEYS.investidores, state.investidores), [state.investidores]);
+  // Produtos continua em localStorage (cache do catálogo V4).
   useEffect(() => writeKey(STORAGE_KEYS.produtos, state.produtos), [state.produtos]);
-  useEffect(() => writeKey(STORAGE_KEYS.projetos, state.projetos), [state.projetos]);
-  useEffect(() => writeKey(STORAGE_KEYS.pagamentos, state.pagamentos), [state.pagamentos]);
-  useEffect(() => writeKey(STORAGE_KEYS.fases, state.fases), [state.fases]);
-  useEffect(() => writeKey(STORAGE_KEYS.auditoria, state.auditoria), [state.auditoria]);
-  useEffect(() => writeKey(STORAGE_KEYS.usuarios, state.usuarios), [state.usuarios]);
-  useEffect(() => {
-    if (state.sessao) writeKey(STORAGE_KEYS.sessao, state.sessao);
-    else localStorage.removeItem("v4gp:" + STORAGE_KEYS.sessao);
-  }, [state.sessao]);
 
   // ─── Auth via Supabase ────────────────────────────────────────────────
   // A sessão vem do Supabase Auth. Mantemos a interface Sessao da app pra
@@ -209,6 +194,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, []);
+
+  // ─── Carrega tudo do Supabase quando há sessão autenticada ───────────
+  // Dispara fetchTudo() ao logar e limpa o state ao deslogar. Mantém
+  // produtos (catálogo, vem por sync separado) intactos.
+  const usuarioId = state.sessao?.usuario_id;
+  useEffect(() => {
+    let cancelled = false;
+    if (!supabase || !usuarioId) {
+      // Sem sessão: limpa estado da app.
+      setState((s) => ({
+        ...s,
+        clientes: [],
+        investidores: [],
+        fases: FASES_DEFAULT,
+        projetos: [],
+        pagamentos: [],
+        auditoria: [],
+        isLoading: false,
+        loadError: null,
+      }));
+      return;
+    }
+    setState((s) => ({ ...s, isLoading: true, loadError: null }));
+    api
+      .fetchTudo()
+      .then((dados) => {
+        if (cancelled) return;
+        setState((s) => ({
+          ...s,
+          clientes: dados.clientes,
+          investidores: dados.investidores,
+          fases: dados.fases.length > 0 ? dados.fases : FASES_DEFAULT,
+          projetos: dados.projetos,
+          pagamentos: dados.pagamentos,
+          auditoria: dados.auditoria,
+          isLoading: false,
+          loadError: null,
+        }));
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : "Erro ao carregar dados.";
+        console.error("[store] fetchTudo falhou:", err);
+        setState((s) => ({ ...s, isLoading: false, loadError: msg }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [usuarioId]);
 
   const login = useCallback(
     async (email: string, senha: string): Promise<AuthResult> => {
@@ -298,15 +332,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, sessao: null }));
   }, []);
 
-  // ----- CLIENTE -----
-  const saveCliente = useCallback((cliente: Cliente) => {
-    setState((s) => {
-      const existing = s.clientes.find((c) => c.id === cliente.id);
-      const mudancas = diffCliente(existing, cliente);
-      const novosClientes = existing
-        ? s.clientes.map((c) => (c.id === cliente.id ? cliente : c))
-        : [...s.clientes, cliente];
+  // ─── Helper para persistir auditoria (best-effort) ───────────────────
+  // Falha silenciosa: log no console mas não interrompe o fluxo. Auditoria
+  // é importante, mas não bloqueia operações de negócio.
+  const persistirAudit = useCallback(
+    async (registro: RegistroAuditoria, email?: string) => {
+      try {
+        await api.insertAuditoria(registro, email);
+      } catch (err) {
+        console.error("[audit] falha ao persistir:", err);
+      }
+    },
+    []
+  );
 
+  // ----- CLIENTE -----
+  const saveCliente = useCallback(
+    async (cliente: Cliente) => {
+      const existing = state.clientes.find((c) => c.id === cliente.id);
+      const mudancas = diffCliente(existing, cliente);
+      try {
+        await api.upsertCliente(cliente);
+      } catch (err) {
+        console.error("[saveCliente] falha:", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        clientes: existing
+          ? s.clientes.map((c) => (c.id === cliente.id ? cliente : c))
+          : [...s.clientes, cliente],
+      }));
+      if (existing && mudancas.length === 0) return;
       const registro = fazerRegistro(
         {
           entidade: "cliente",
@@ -316,26 +373,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo: existing ? resumoMudancas(mudancas) : "Cliente criado",
           mudancas,
         },
-        s.sessao
+        state.sessao
       );
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.clientes, state.sessao, persistirAudit]
+  );
 
-      // Se não houve mudança real, não polui o log
-      if (existing && mudancas.length === 0) {
-        return { ...s, clientes: novosClientes };
+  const deleteCliente = useCallback(
+    async (id: string) => {
+      const cli = state.clientes.find((c) => c.id === id);
+      if (!cli) return;
+      try {
+        await api.softDeleteCliente(id);
+      } catch (err) {
+        console.error("[deleteCliente] falha:", err);
+        return;
       }
-      return {
-        ...s,
-        clientes: novosClientes,
-        auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
-
-  const deleteCliente = useCallback((id: string) => {
-    setState((s) => {
-      const cli = s.clientes.find((c) => c.id === id);
-      if (!cli) return s;
-      const novo = { ...cli, status: "inativo" as const };
+      const novo: Cliente = { ...cli, status: "inativo" };
       const registro = fazerRegistro(
         {
           entidade: "cliente",
@@ -345,60 +401,74 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo: "Cliente marcado como inativo",
           mudancas: diffCliente(cli, novo),
         },
-        s.sessao
+        state.sessao
       );
-      return {
+      setState((s) => ({
         ...s,
         clientes: s.clientes.map((c) => (c.id === id ? novo : c)),
         auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
-
-  // Atualiza apenas o status do cliente (usado no drag-and-drop do kanban).
-  // Quando muda PARA churn, registra a data automaticamente; quando sai de
-  // churn, limpa data_churn e motivo_churn.
-  const moveClienteStatus = useCallback(
-    (clienteId: string, novoStatus: Cliente["status"]) => {
-      setState((s) => {
-        const cli = s.clientes.find((c) => c.id === clienteId);
-        if (!cli || cli.status === novoStatus) return s;
-        const novo: Cliente = { ...cli, status: novoStatus };
-        if (novoStatus === "churn" && !novo.data_churn) {
-          novo.data_churn = new Date().toISOString().slice(0, 10);
-        } else if (novoStatus !== "churn") {
-          novo.data_churn = undefined;
-          novo.motivo_churn = undefined;
-        }
-        const registro = fazerRegistro(
-          {
-            entidade: "cliente",
-            entidade_id: clienteId,
-            entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
-            acao: "atualizar",
-            resumo: "Movido entre fases no kanban",
-            mudancas: diffCliente(cli, novo),
-          },
-          s.sessao
-        );
-        return {
-          ...s,
-          clientes: s.clientes.map((c) => (c.id === clienteId ? novo : c)),
-          auditoria: [registro, ...s.auditoria],
-        };
-      });
+      }));
+      persistirAudit(registro, state.sessao?.email);
     },
-    []
+    [state.clientes, state.sessao, persistirAudit]
+  );
+
+  const moveClienteStatus = useCallback(
+    async (clienteId: string, novoStatus: Cliente["status"]) => {
+      const cli = state.clientes.find((c) => c.id === clienteId);
+      if (!cli || cli.status === novoStatus) return;
+      const novo: Cliente = { ...cli, status: novoStatus };
+      if (novoStatus === "churn" && !novo.data_churn) {
+        novo.data_churn = new Date().toISOString().slice(0, 10);
+      } else if (novoStatus !== "churn") {
+        novo.data_churn = undefined;
+        novo.motivo_churn = undefined;
+      }
+      try {
+        await api.moveClienteStatus(clienteId, novoStatus);
+      } catch (err) {
+        console.error("[moveClienteStatus] falha:", err);
+        return;
+      }
+      const registro = fazerRegistro(
+        {
+          entidade: "cliente",
+          entidade_id: clienteId,
+          entidade_label: `${cli.sigla} · ${cli.nome_fantasia}`,
+          acao: "atualizar",
+          resumo: "Movido entre fases no kanban",
+          mudancas: diffCliente(cli, novo),
+        },
+        state.sessao
+      );
+      setState((s) => ({
+        ...s,
+        clientes: s.clientes.map((c) => (c.id === clienteId ? novo : c)),
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.clientes, state.sessao, persistirAudit]
   );
 
   // ----- INVESTIDOR -----
-  const saveInvestidor = useCallback((inv: Investidor) => {
-    setState((s) => {
-      const existing = s.investidores.find((i) => i.id === inv.id);
+  const saveInvestidor = useCallback(
+    async (inv: Investidor) => {
+      const existing = state.investidores.find((i) => i.id === inv.id);
       const mudancas = diffInvestidor(existing, inv);
-      const novos = existing
-        ? s.investidores.map((i) => (i.id === inv.id ? inv : i))
-        : [...s.investidores, inv];
+      try {
+        await api.upsertInvestidor(inv);
+      } catch (err) {
+        console.error("[saveInvestidor] falha:", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        investidores: existing
+          ? s.investidores.map((i) => (i.id === inv.id ? inv : i))
+          : [...s.investidores, inv],
+      }));
+      if (existing && mudancas.length === 0) return;
       const registro = fazerRegistro(
         {
           entidade: "investidor",
@@ -408,24 +478,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo: existing ? resumoMudancas(mudancas) : "Investidor criado",
           mudancas,
         },
-        s.sessao
+        state.sessao
       );
-      if (existing && mudancas.length === 0) {
-        return { ...s, investidores: novos };
-      }
-      return {
-        ...s,
-        investidores: novos,
-        auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.investidores, state.sessao, persistirAudit]
+  );
 
-  const deleteInvestidor = useCallback((id: string) => {
-    setState((s) => {
-      const inv = s.investidores.find((i) => i.id === id);
-      if (!inv) return s;
-      const novo = { ...inv, status: "inativo" as const };
+  const deleteInvestidor = useCallback(
+    async (id: string) => {
+      const inv = state.investidores.find((i) => i.id === id);
+      if (!inv) return;
+      try {
+        await api.deleteInvestidor(id);
+      } catch (err) {
+        console.error("[deleteInvestidor] falha:", err);
+        return;
+      }
+      const novo: Investidor = { ...inv, status: "inativo" };
       const registro = fazerRegistro(
         {
           entidade: "investidor",
@@ -435,15 +506,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo: "Investidor marcado como inativo",
           mudancas: diffInvestidor(inv, novo),
         },
-        s.sessao
+        state.sessao
       );
-      return {
+      setState((s) => ({
         ...s,
         investidores: s.investidores.map((i) => (i.id === id ? novo : i)),
         auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.investidores, state.sessao, persistirAudit]
+  );
 
   // ----- PRODUTO (read-only via sync com banco externo) -----
   // Recebe o snapshot completo do catálogo externo e:
@@ -515,13 +588,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ----- PROJETO -----
-  const saveProjeto = useCallback((projeto: Projeto) => {
-    setState((s) => {
-      const existing = s.projetos.find((p) => p.id === projeto.id);
-      const mudancas = diffProjeto(existing, projeto, s.fases);
-      const novos = existing
-        ? s.projetos.map((p) => (p.id === projeto.id ? projeto : p))
-        : [...s.projetos, projeto];
+  const saveProjeto = useCallback(
+    async (projeto: Projeto) => {
+      const existing = state.projetos.find((p) => p.id === projeto.id);
+      const mudancas = diffProjeto(existing, projeto, state.fases);
+      try {
+        await api.upsertProjeto(projeto);
+      } catch (err) {
+        console.error("[saveProjeto] falha:", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        projetos: existing
+          ? s.projetos.map((p) => (p.id === projeto.id ? projeto : p))
+          : [...s.projetos, projeto],
+      }));
+      if (existing && mudancas.length === 0) return;
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -531,24 +614,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           resumo: existing ? resumoMudancas(mudancas) : "Projeto criado",
           mudancas,
         },
-        s.sessao
+        state.sessao
       );
-      if (existing && mudancas.length === 0) {
-        return { ...s, projetos: novos };
-      }
-      return {
-        ...s,
-        projetos: novos,
-        auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.projetos, state.fases, state.sessao, persistirAudit]
+  );
 
-  const deleteProjeto = useCallback((id: string) => {
-    setState((s) => {
-      const prj = s.projetos.find((p) => p.id === id);
-      if (!prj) return s;
-      const novo = { ...prj, status: "concluido" as const };
+  const deleteProjeto = useCallback(
+    async (id: string) => {
+      const prj = state.projetos.find((p) => p.id === id);
+      if (!prj) return;
+      try {
+        await api.softDeleteProjeto(id);
+      } catch (err) {
+        console.error("[deleteProjeto] falha:", err);
+        return;
+      }
+      const novo: Projeto = { ...prj, status: "concluido" };
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -556,23 +640,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entidade_label: `${prj.codigo} · ${prj.nome}`,
           acao: "remover",
           resumo: "Projeto encerrado",
-          mudancas: diffProjeto(prj, novo, s.fases),
+          mudancas: diffProjeto(prj, novo, state.fases),
         },
-        s.sessao
+        state.sessao
       );
-      return {
+      setState((s) => ({
         ...s,
         projetos: s.projetos.map((p) => (p.id === id ? novo : p)),
         auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.projetos, state.fases, state.sessao, persistirAudit]
+  );
 
-  const moveProjetoFase = useCallback((projetoId: string, novaFase: Projeto["fase_atual"]) => {
-    setState((s) => {
-      const proj = s.projetos.find((p) => p.id === projetoId);
-      if (!proj || proj.fase_atual === novaFase) return s;
-      const novo = { ...proj, fase_atual: novaFase };
+  const moveProjetoFase = useCallback(
+    async (projetoId: string, novaFase: Projeto["fase_atual"]) => {
+      const proj = state.projetos.find((p) => p.id === projetoId);
+      if (!proj || proj.fase_atual === novaFase) return;
+      const novo: Projeto = { ...proj, fase_atual: novaFase };
+      try {
+        await api.moveProjetoFase(projetoId, novaFase);
+      } catch (err) {
+        console.error("[moveProjetoFase] falha:", err);
+        return;
+      }
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -580,27 +672,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
           entidade_label: `${proj.codigo} · ${proj.nome}`,
           acao: "atualizar",
           resumo: "Movido entre fases no kanban",
-          mudancas: diffProjeto(proj, novo, s.fases),
+          mudancas: diffProjeto(proj, novo, state.fases),
         },
-        s.sessao
+        state.sessao
       );
-      return {
+      setState((s) => ({
         ...s,
         projetos: s.projetos.map((p) => (p.id === projetoId ? novo : p)),
         auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.projetos, state.fases, state.sessao, persistirAudit]
+  );
 
   // ----- PAGAMENTO -----
-  const savePagamento = useCallback((pag: Pagamento) => {
-    setState((s) => {
-      const existing = s.pagamentos.find((p) => p.id === pag.id);
+  const savePagamento = useCallback(
+    async (pag: Pagamento) => {
+      const existing = state.pagamentos.find((p) => p.id === pag.id);
       const mudancas = diffPagamento(existing, pag);
-      const novos = existing
-        ? s.pagamentos.map((p) => (p.id === pag.id ? pag : p))
-        : [...s.pagamentos, pag];
-      const proj = s.projetos.find((p) => p.id === pag.projeto_id);
+      try {
+        await api.upsertPagamento(pag);
+      } catch (err) {
+        console.error("[savePagamento] falha:", err);
+        return;
+      }
+      setState((s) => ({
+        ...s,
+        pagamentos: existing
+          ? s.pagamentos.map((p) => (p.id === pag.id ? pag : p))
+          : [...s.pagamentos, pag],
+      }));
+      if (existing && mudancas.length === 0) return;
+      const proj = state.projetos.find((p) => p.id === pag.projeto_id);
       const registro = fazerRegistro(
         {
           entidade: "pagamento",
@@ -616,59 +720,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
             : `Pagamento criado · ${pag.num_parcelas} parcelas`,
           mudancas,
         },
-        s.sessao
+        state.sessao
       );
-      if (existing && mudancas.length === 0) {
-        return { ...s, pagamentos: novos };
-      }
-      return {
-        ...s,
-        pagamentos: novos,
-        auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.pagamentos, state.projetos, state.sessao, persistirAudit]
+  );
 
-  const deletePagamento = useCallback((id: string) => {
-    setState((s) => {
-      const pag = s.pagamentos.find((p) => p.id === id);
-      if (!pag) return s;
-      const novo = { ...pag, status_geral: "cancelado" as const };
-      const proj = s.projetos.find((p) => p.id === pag.projeto_id);
+  const deletePagamento = useCallback(
+    async (id: string) => {
+      const pag = state.pagamentos.find((p) => p.id === id);
+      if (!pag) return;
+      try {
+        await api.softDeletePagamento(id);
+      } catch (err) {
+        console.error("[deletePagamento] falha:", err);
+        return;
+      }
+      const novo: Pagamento = { ...pag, status_geral: "cancelado" };
+      const proj = state.projetos.find((p) => p.id === pag.projeto_id);
       const registro = fazerRegistro(
         {
           entidade: "pagamento",
           entidade_id: id,
-          entidade_label: proj
-            ? `${proj.codigo} · pagamento`
-            : "Pagamento",
+          entidade_label: proj ? `${proj.codigo} · pagamento` : "Pagamento",
           pai_entidade: "projeto",
           pai_id: pag.projeto_id,
           acao: "remover",
           resumo: "Pagamento cancelado",
           mudancas: diffPagamento(pag, novo),
         },
-        s.sessao
+        state.sessao
       );
-      return {
+      setState((s) => ({
         ...s,
         pagamentos: s.pagamentos.map((p) => (p.id === id ? novo : p)),
         auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.pagamentos, state.projetos, state.sessao, persistirAudit]
+  );
 
-  const atualizarParcela = useCallback((pagamentoId: string, parcela: Parcela) => {
-    setState((s) => {
-      const pag = s.pagamentos.find((p) => p.id === pagamentoId);
-      if (!pag) return s;
+  const atualizarParcela = useCallback(
+    async (pagamentoId: string, parcela: Parcela) => {
+      const pag = state.pagamentos.find((p) => p.id === pagamentoId);
+      if (!pag) return;
       const anterior = pag.parcelas.find((p) => p.id === parcela.id);
       const mudancas = diffParcela(anterior, parcela);
+      try {
+        await api.upsertParcela(parcela);
+      } catch (err) {
+        console.error("[atualizarParcela] falha:", err);
+        return;
+      }
       const novoPag = {
         ...pag,
-        parcelas: pag.parcelas.map((par) => (par.id === parcela.id ? parcela : par)),
+        parcelas: pag.parcelas.map((par) =>
+          par.id === parcela.id ? parcela : par
+        ),
       };
-      const proj = s.projetos.find((p) => p.id === pag.projeto_id);
+      setState((s) => ({
+        ...s,
+        pagamentos: s.pagamentos.map((p) => (p.id === pagamentoId ? novoPag : p)),
+      }));
+      if (mudancas.length === 0) return;
+      const proj = state.projetos.find((p) => p.id === pag.projeto_id);
       const registro = fazerRegistro(
         {
           entidade: "parcela",
@@ -685,29 +803,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
               : resumoMudancas(mudancas),
           mudancas,
         },
-        s.sessao
+        state.sessao
       );
-      if (mudancas.length === 0) {
-        return {
-          ...s,
-          pagamentos: s.pagamentos.map((p) => (p.id === pagamentoId ? novoPag : p)),
-        };
-      }
-      return {
-        ...s,
-        pagamentos: s.pagamentos.map((p) => (p.id === pagamentoId ? novoPag : p)),
-        auditoria: [registro, ...s.auditoria],
-      };
-    });
-  }, []);
+      setState((s) => ({ ...s, auditoria: [registro, ...s.auditoria] }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.pagamentos, state.projetos, state.sessao, persistirAudit]
+  );
 
   // ----- FASES (kanban) -----
-  const saveFase = useCallback((fase: Fase) => {
-    setState((s) => {
-      const existing = s.fases.find((f) => f.id === fase.id);
-      const novas = existing
-        ? s.fases.map((f) => (f.id === fase.id ? fase : f))
-        : [...s.fases, fase];
+  const saveFase = useCallback(
+    async (fase: Fase) => {
+      const existing = state.fases.find((f) => f.id === fase.id);
+      try {
+        await api.upsertFase(fase);
+      } catch (err) {
+        console.error("[saveFase] falha:", err);
+        return;
+      }
       const registro = fazerRegistro(
         {
           entidade: "projeto",
@@ -745,14 +858,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
               ]
             : [],
         },
-        s.sessao
+        state.sessao
       );
-      return { ...s, fases: novas, auditoria: [registro, ...s.auditoria] };
-    });
-  }, []);
+      setState((s) => ({
+        ...s,
+        fases: existing
+          ? s.fases.map((f) => (f.id === fase.id ? fase : f))
+          : [...s.fases, fase],
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.fases, state.sessao, persistirAudit]
+  );
 
   const deleteFase = useCallback(
-    (id: string): string | null => {
+    async (id: string): Promise<string | null> => {
       const fase = state.fases.find((f) => f.id === id);
       if (!fase) return "Fase não encontrada.";
       const projetosNaFase = state.projetos.filter(
@@ -761,32 +882,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (projetosNaFase > 0) {
         return `Não é possível excluir: ${projetosNaFase} projeto(s) estão nesta fase. Mova-os primeiro.`;
       }
-      setState((s) => {
-        const registro = fazerRegistro(
-          {
-            entidade: "projeto",
-            entidade_id: id,
-            entidade_label: `Fase: ${fase.nome}`,
-            acao: "remover",
-            resumo: `Fase "${fase.nome}" excluída`,
-            mudancas: [],
-          },
-          s.sessao
-        );
-        return {
-          ...s,
-          fases: s.fases.filter((f) => f.id !== id),
-          auditoria: [registro, ...s.auditoria],
-        };
-      });
+      try {
+        await api.deleteFase(id);
+      } catch (err) {
+        console.error("[deleteFase] falha:", err);
+        return "Falha ao excluir no servidor.";
+      }
+      const registro = fazerRegistro(
+        {
+          entidade: "projeto",
+          entidade_id: id,
+          entidade_label: `Fase: ${fase.nome}`,
+          acao: "remover",
+          resumo: `Fase "${fase.nome}" excluída`,
+          mudancas: [],
+        },
+        state.sessao
+      );
+      setState((s) => ({
+        ...s,
+        fases: s.fases.filter((f) => f.id !== id),
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
       return null;
     },
-    [state.fases, state.projetos]
+    [state.fases, state.projetos, state.sessao, persistirAudit]
   );
 
-  const reordenarFases = useCallback((idsEmOrdem: string[]) => {
-    setState((s) => {
-      const novas = s.fases
+  const reordenarFases = useCallback(
+    async (idsEmOrdem: string[]) => {
+      try {
+        await api.reordenarFases(idsEmOrdem);
+      } catch (err) {
+        console.error("[reordenarFases] falha:", err);
+        return;
+      }
+      const novas = state.fases
         .map((f) => {
           const novaOrdem = idsEmOrdem.indexOf(f.id);
           return novaOrdem >= 0 ? { ...f, ordem: novaOrdem + 1 } : f;
@@ -803,16 +935,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
             {
               campo: "ordem",
               label: "Nova ordem",
-              de: s.fases.map((f) => f.nome).join(" → "),
+              de: state.fases.map((f) => f.nome).join(" → "),
               para: novas.map((f) => f.nome).join(" → "),
             },
           ],
         },
-        s.sessao
+        state.sessao
       );
-      return { ...s, fases: novas, auditoria: [registro, ...s.auditoria] };
-    });
-  }, []);
+      setState((s) => ({
+        ...s,
+        fases: novas,
+        auditoria: [registro, ...s.auditoria],
+      }));
+      persistirAudit(registro, state.sessao?.email);
+    },
+    [state.fases, state.sessao, persistirAudit]
+  );
 
   const gerarCodigoProjeto = useCallback(
     (clienteId: string): string => {
@@ -824,6 +962,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [state.clientes, state.projetos]
   );
+
+  // ─── Importador one-shot do localStorage para o Supabase ─────────────
+  // Lê dados antigos persistidos em localStorage (clientes/projetos/etc.)
+  // e faz upsert em massa no Supabase. Útil em primeiro acesso pós-Auth
+  // pra trazer dados criados antes da migração.
+  const importarLocalStorage = useCallback(async () => {
+    const detalhes: Record<string, number> = {
+      investidores: 0,
+      fases: 0,
+      clientes: 0,
+      projetos: 0,
+      pagamentos: 0,
+    };
+    try {
+      const lsClientes = readKey<Cliente[]>(STORAGE_KEYS.clientes, []);
+      const lsInvestidores = readKey<Investidor[]>(STORAGE_KEYS.investidores, []);
+      const lsFases = readKey<Fase[]>(STORAGE_KEYS.fases, []);
+      const lsProjetos = readKey<Projeto[]>(STORAGE_KEYS.projetos, []);
+      const lsPagamentos = readKey<Pagamento[]>(STORAGE_KEYS.pagamentos, []);
+
+      // Ordem importa por FKs:
+      // 1. investidores (ref por projetos.squad)
+      for (const i of lsInvestidores) {
+        await api.upsertInvestidor(i);
+        detalhes.investidores++;
+      }
+      // 2. fases (ref por projetos.fase_atual)
+      for (const f of lsFases) {
+        await api.upsertFase(f);
+        detalhes.fases++;
+      }
+      // 3. clientes (ref por projetos.cliente_id)
+      for (const c of lsClientes) {
+        await api.upsertCliente(c);
+        detalhes.clientes++;
+      }
+      // 4. projetos (depende de clientes/fases/investidores)
+      for (const p of lsProjetos) {
+        await api.upsertProjeto(p);
+        detalhes.projetos++;
+      }
+      // 5. pagamentos (depende de projetos)
+      for (const pg of lsPagamentos) {
+        await api.upsertPagamento(pg);
+        detalhes.pagamentos++;
+      }
+
+      // Após importar, refaz fetch para sincronizar state com Supabase.
+      const dados = await api.fetchTudo();
+      setState((s) => ({
+        ...s,
+        clientes: dados.clientes,
+        investidores: dados.investidores,
+        fases: dados.fases.length > 0 ? dados.fases : FASES_DEFAULT,
+        projetos: dados.projetos,
+        pagamentos: dados.pagamentos,
+        auditoria: dados.auditoria,
+      }));
+
+      return { ok: true, detalhes };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao importar.";
+      console.error("[importarLocalStorage] falha:", err);
+      return { ok: false, detalhes, erro: msg };
+    }
+  }, []);
 
   const value = useMemo<AppContextValue>(
     () => ({
@@ -848,6 +1052,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
+      importarLocalStorage,
     }),
     [
       state,
@@ -871,6 +1076,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
+      importarLocalStorage,
     ]
   );
 
