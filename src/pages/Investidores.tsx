@@ -32,10 +32,22 @@ export function InvestidoresPage() {
     const projetosDele = projetos.filter(
       (p) => p.status === "ativo" && p.squad.some((s) => s.investidor_id === invId)
     );
-    const receita = projetosDele
+    // Receita mensal: soma do valor_total dos projetos recorrentes (em
+    // recorrente, valor_total já representa o mensal).
+    const mensal = projetosDele
       .filter((p) => p.modelo_cobranca === "recorrente")
       .reduce((acc, p) => acc + p.valor_total, 0);
-    return { projetos: projetosDele.length, receita };
+    // TCV: soma do valor total do contrato de cada projeto. Em recorrente,
+    // usa valor_tcv ou (fallback) valor_total × lt_meses. Em one-time,
+    // valor_tcv ou valor_total.
+    const tcv = projetosDele.reduce((acc, p) => {
+      if (typeof p.valor_tcv === "number" && p.valor_tcv > 0) return acc + p.valor_tcv;
+      if (p.modelo_cobranca === "recorrente") {
+        return acc + p.valor_total * (p.lt_meses ?? 0);
+      }
+      return acc + p.valor_total;
+    }, 0);
+    return { projetos: projetosDele.length, mensal, tcv };
   }
 
   return (
@@ -128,17 +140,29 @@ export function InvestidoresPage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 border-t border-border/60 pt-3 text-xs">
+                  <div className="grid grid-cols-3 gap-2 border-t border-border/60 pt-3 text-xs">
                     <div>
-                      <p className="text-muted-foreground">Projetos ativos</p>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Projetos
+                      </p>
                       <p className="text-base font-semibold tabular-nums text-foreground">
                         {m.projetos}
                       </p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Receita atribuída</p>
-                      <p className="text-base font-semibold tabular-nums text-foreground">
-                        {formatCurrency(m.receita)}
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        Mensal
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums text-foreground">
+                        {formatCurrency(m.mensal)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                        TCV
+                      </p>
+                      <p className="text-sm font-semibold tabular-nums text-foreground">
+                        {formatCurrency(m.tcv)}
                       </p>
                     </div>
                   </div>
