@@ -432,12 +432,41 @@ export function FinanceiroPage() {
                             const total = v.previsto + v.pago + v.atrasado;
                             const statusDominante: StatusParcela =
                               v.atrasado > 0 ? "atrasado" : v.pago > 0 && v.previsto === 0 ? "pago" : "previsto";
+                            // Coleta parcelas individuais do mês entre todos
+                            // os projetos do cliente — clique abre a primeira
+                            // (idealmente a não-paga mais antiga).
+                            const celulasDoMes = linha.projetos.flatMap(
+                              (lp) => lp.porMes[m.key] ?? []
+                            );
+                            const naoPagas = celulasDoMes.filter(
+                              (c) => c.statusEfetivo !== "pago"
+                            );
+                            const alvo =
+                              (naoPagas[0] ?? celulasDoMes[0]) || null;
                             return (
                               <td key={m.key} className="border-b p-1 text-center">
-                                <div
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!alvo) return;
+                                    setParcelaSel({
+                                      pagamentoId: alvo.pagamento.id,
+                                      parcela: {
+                                        ...alvo.parcela,
+                                        status: alvo.statusEfetivo,
+                                      },
+                                    });
+                                  }}
+                                  disabled={!alvo}
+                                  title={
+                                    celulasDoMes.length > 1
+                                      ? `${celulasDoMes.length}× parcelas neste mês — expanda o cliente para ver todas`
+                                      : "Clique para alterar status"
+                                  }
                                   className={cn(
-                                    "mx-auto inline-flex flex-col items-center rounded-md border px-2 py-1",
-                                    STATUS_CELL_CLASS[statusDominante]
+                                    "mx-auto inline-flex flex-col items-center rounded-md border px-2 py-1 transition-colors",
+                                    STATUS_CELL_CLASS[statusDominante],
+                                    alvo && "cursor-pointer"
                                   )}
                                 >
                                   <span className="text-xs font-semibold tabular-nums leading-tight">
@@ -448,7 +477,12 @@ export function FinanceiroPage() {
                                       pago {formatCurrency(v.pago)}
                                     </span>
                                   )}
-                                </div>
+                                  {celulasDoMes.length > 1 && (
+                                    <span className="text-[9px] leading-tight opacity-60">
+                                      {celulasDoMes.length}×
+                                    </span>
+                                  )}
+                                </button>
                               </td>
                             );
                           })}

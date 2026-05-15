@@ -7,6 +7,7 @@ import {
   Briefcase,
   Building2,
   CalendarDays,
+  Edit,
   ExternalLink,
   FileText,
   Handshake,
@@ -38,7 +39,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
-import { formatCurrency, formatDate, uid, variantCategoria } from "@/lib/utils";
+import { ParcelaActionDialog } from "@/components/financeiro/ParcelaActionDialog";
+import { cn, formatCurrency, formatDate, uid, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   type CategoriaV4,
@@ -52,9 +54,12 @@ import {
   type MotivoChurn,
   ORIGENS,
   type OrigemProjeto,
+  type Pagamento,
+  type Parcela,
   type Produto,
   type Projeto,
   type ReuniaoProjeto,
+  type StatusParcela,
   SAUDE_LABEL,
   type SaudeProjeto,
   SENTIMENTOS_REUNIAO,
@@ -403,69 +408,11 @@ export function ProjetoDetailPage() {
       <ReunioesCard draft={draft} setField={setField} />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-title-card">Financeiro</CardTitle>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/financeiro">Detalhar</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 grid grid-cols-3 gap-3 text-center">
-              <div className="rounded-lg bg-emerald-50 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-emerald-700">
-                  Recebido
-                </p>
-                <p className="text-base font-bold tabular-nums text-emerald-700">
-                  {formatCurrency(totalRecebido)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-amber-50 p-3">
-                <p className="text-[11px] uppercase tracking-wide text-amber-700">
-                  Previsto
-                </p>
-                <p className="text-base font-bold tabular-nums text-amber-700">
-                  {formatCurrency(totalPrevisto)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-muted p-3">
-                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Total
-                </p>
-                <p className="text-base font-bold tabular-nums">
-                  {formatCurrency(totalRecebido + totalPrevisto)}
-                </p>
-              </div>
-            </div>
-            {pagamentosProjeto.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nenhum pagamento cadastrado para este projeto.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {pagamentosProjeto.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center justify-between rounded-md border border-border/60 bg-card px-3 py-2 text-sm"
-                  >
-                    <div>
-                      <p className="font-medium capitalize">
-                        {p.tipo} · {p.metodo}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.num_parcelas}× · 1ª em{" "}
-                        {formatDate(p.data_primeira_parcela)}
-                      </p>
-                    </div>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {formatCurrency(p.valor_total)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <FinanceiroCard
+          pagamentos={pagamentosProjeto}
+          totalRecebido={totalRecebido}
+          totalPrevisto={totalPrevisto}
+        />
 
         <Card>
           <CardHeader>
@@ -1901,5 +1848,158 @@ function ReuniaoInlineEditor({
         </div>
       </div>
     </li>
+  );
+}
+
+// --------------------- Card Financeiro do Projeto ----------------------
+
+const STATUS_TONE: Record<StatusParcela, string> = {
+  pago: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  previsto: "bg-amber-50 text-amber-800 border-amber-200",
+  atrasado: "bg-rose-50 text-rose-700 border-rose-200",
+  cancelado: "bg-muted text-muted-foreground border-border line-through",
+};
+
+function FinanceiroCard({
+  pagamentos,
+  totalRecebido,
+  totalPrevisto,
+}: {
+  pagamentos: Pagamento[];
+  totalRecebido: number;
+  totalPrevisto: number;
+}) {
+  const [parcelaSel, setParcelaSel] = useState<{
+    pagamentoId: string;
+    parcela: Parcela;
+  } | null>(null);
+
+  // Achata todas as parcelas com referência ao pagamento, ordenado por data.
+  const parcelasOrdenadas = useMemo(() => {
+    const todas: { parcela: Parcela; pagamento: Pagamento }[] = [];
+    for (const pag of pagamentos) {
+      for (const par of pag.parcelas) {
+        todas.push({ parcela: par, pagamento: pag });
+      }
+    }
+    return todas.sort((a, b) =>
+      a.parcela.data_vencimento.localeCompare(b.parcela.data_vencimento)
+    );
+  }, [pagamentos]);
+
+  function statusEfetivo(par: Parcela): StatusParcela {
+    if (par.status === "previsto") {
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      if (new Date(par.data_vencimento) < hoje) return "atrasado";
+    }
+    return par.status;
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-title-card">Financeiro</CardTitle>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/financeiro">Ver tudo</Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-emerald-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-700">
+                Recebido
+              </p>
+              <p className="text-base font-bold tabular-nums text-emerald-700">
+                {formatCurrency(totalRecebido)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-amber-700">
+                A receber
+              </p>
+              <p className="text-base font-bold tabular-nums text-amber-700">
+                {formatCurrency(totalPrevisto)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-muted p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Total
+              </p>
+              <p className="text-base font-bold tabular-nums">
+                {formatCurrency(totalRecebido + totalPrevisto)}
+              </p>
+            </div>
+          </div>
+
+          {parcelasOrdenadas.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border/60 p-4 text-center text-sm text-muted-foreground">
+              Nenhum pagamento programado.
+              <br />
+              <span className="text-[11px]">
+                Preencha TCV, nº de parcelas e data de início no card de Dados
+                pra gerar a régua automaticamente.
+              </span>
+            </div>
+          ) : (
+            <div className="max-h-[420px] space-y-1 overflow-y-auto pr-1">
+              {parcelasOrdenadas.map(({ parcela, pagamento }) => {
+                const st = statusEfetivo(parcela);
+                return (
+                  <button
+                    key={parcela.id}
+                    type="button"
+                    onClick={() =>
+                      setParcelaSel({
+                        pagamentoId: pagamento.id,
+                        parcela: { ...parcela, status: st },
+                      })
+                    }
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors hover:opacity-90",
+                      STATUS_TONE[st]
+                    )}
+                    title="Clique para alterar status / data de pagamento"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[10px] font-bold opacity-70">
+                        {String(parcela.numero).padStart(2, "0")}/
+                        {String(pagamento.num_parcelas).padStart(2, "0")}
+                      </span>
+                      <div>
+                        <p className="text-xs font-medium">
+                          {formatDate(parcela.data_vencimento)}
+                        </p>
+                        <p className="text-[10px] capitalize opacity-70">
+                          {st}
+                          {parcela.data_pagamento &&
+                            ` · pago em ${formatDate(parcela.data_pagamento)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold tabular-nums">
+                        {formatCurrency(parcela.valor)}
+                      </span>
+                      <Edit className="h-3 w-3 opacity-50" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {parcelaSel && (
+        <ParcelaActionDialog
+          open={!!parcelaSel}
+          onOpenChange={(v) => !v && setParcelaSel(null)}
+          pagamentoId={parcelaSel.pagamentoId}
+          parcela={parcelaSel.parcela}
+        />
+      )}
+    </>
   );
 }
