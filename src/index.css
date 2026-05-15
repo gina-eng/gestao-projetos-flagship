@@ -137,6 +137,27 @@
   .table-cell-number { @apply text-sm text-content font-mono text-center; }
 }
 
+/* ─── Scrollbar horizontal sempre visível (kanban) ───────────────────────
+   Em macOS/iOS as scrollbars somem por padrão e o usuário não percebe que
+   pode rolar. Forçamos uma scrollbar discreta porém visível. */
+.kanban-scroller {
+  scrollbar-width: thin;            /* Firefox */
+  scrollbar-color: rgba(0,0,0,0.25) transparent;
+}
+.kanban-scroller::-webkit-scrollbar {
+  height: 10px;
+}
+.kanban-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.kanban-scroller::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,0.25);
+  border-radius: 9999px;
+}
+.kanban-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0,0,0,0.45);
+}
+
 /* Animações e microinterações */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(10px); }

@@ -59,8 +59,8 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
   }
 
   return (
-    <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
-      <div className="flex min-w-max gap-3">
+    <div className="kanban-scroller -mx-4 overflow-x-auto px-4 pb-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="flex min-w-max gap-3 pr-2">
         {fasesOrdenadas.map((fase) => {
           const cards = projetos.filter((p) => p.fase_atual === fase.id);
           const total = cards.reduce(
