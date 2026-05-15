@@ -168,8 +168,11 @@ export function OportunidadesPage() {
         </CardContent>
       </Card>
 
-      {/* Conteúdo */}
-      {filtradas.length === 0 ? (
+      {/* Conteúdo: kanban sempre aparece (colunas vazias mostram as etapas);
+          lista mostra empty state quando filtradas==0. */}
+      {view === "kanban" ? (
+        <OportunidadeKanban oportunidades={filtradas} />
+      ) : filtradas.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
@@ -187,8 +190,6 @@ export function OportunidadesPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : view === "kanban" ? (
-        <OportunidadeKanban oportunidades={filtradas} />
       ) : (
         <Card>
           <CardContent className="p-0">

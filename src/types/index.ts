@@ -154,6 +154,10 @@ export type MotivoPerda =
 export interface Oportunidade {
   id: string;
   cliente_id: string;
+  // Projeto vinculado (opcional). Útil para mapear quais projetos geram
+  // mais oportunidades de upsell/cross-sell. Pode ficar null se a oportunidade
+  // veio de outro canal (indicação, prospecção, etc.).
+  projeto_id?: string;
   produto_id: string;
   variacao_id?: string;
   nome: string;

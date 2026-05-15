@@ -50,7 +50,7 @@ export function OportunidadeFormDialog({
   onOpenChange,
   clientePreSelect,
 }: Props) {
-  const { clientes, produtos, investidores, saveOportunidade } = useApp();
+  const { clientes, produtos, investidores, projetos, saveOportunidade } = useApp();
   const [form, setForm] = useState<Oportunidade>(empty());
   const [categoria, setCategoria] = useState<CategoriaV4 | "">("");
   const [erros, setErros] = useState<Record<string, string>>({});
@@ -79,6 +79,15 @@ export function OportunidadeFormDialog({
         (p) => p.ativo && (!categoria || p.categoria === categoria)
       ),
     [produtos, categoria]
+  );
+
+  // Projetos do cliente selecionado, para vincular como origem da oportunidade.
+  const projetosDoCliente = useMemo(
+    () =>
+      projetos.filter(
+        (p) => p.cliente_id === form.cliente_id && p.status !== "concluido"
+      ),
+    [projetos, form.cliente_id]
   );
 
   function setField<K extends keyof Oportunidade>(k: K, v: Oportunidade[K]) {
@@ -157,6 +166,33 @@ export function OportunidadeFormDialog({
               </Select>
             </div>
           </div>
+
+          {form.cliente_id && projetosDoCliente.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Projeto vinculado (opcional)</Label>
+              <Select
+                value={form.projeto_id || "__none__"}
+                onValueChange={(v) =>
+                  setField("projeto_id", v === "__none__" ? undefined : v)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sem projeto vinculado</SelectItem>
+                  {projetosDoCliente.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.codigo} · {p.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Indica qual projeto gerou a oportunidade (upsell/cross-sell).
+              </p>
+            </div>
+          )}
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">

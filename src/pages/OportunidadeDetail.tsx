@@ -64,6 +64,7 @@ export function OportunidadeDetailPage() {
     clientes,
     produtos,
     investidores,
+    projetos,
     auditoria,
     saveOportunidade,
     deleteOportunidade,
@@ -171,6 +172,7 @@ export function OportunidadeDetailPage() {
   const cliente = clientes.find((c) => c.id === draft.cliente_id);
   const produto = produtos.find((p) => p.id === draft.produto_id);
   const responsavel = investidores.find((i) => i.id === draft.responsavel_id);
+  const projetoVinculado = projetos.find((p) => p.id === draft.projeto_id);
   const categoria = CATEGORIAS.find((c) => c.value === produto?.categoria);
   const tier = TIERS.find((t) => t.value === cliente?.tier);
   const produtoSelecionadoCat = produto?.categoria;
@@ -178,6 +180,9 @@ export function OportunidadeDetailPage() {
     (p) =>
       p.ativo &&
       (!produtoSelecionadoCat || p.categoria === produtoSelecionadoCat)
+  );
+  const projetosDoCliente = projetos.filter(
+    (p) => p.cliente_id === draft.cliente_id && p.status !== "concluido"
   );
 
   const auditoriaOpo = auditoria.filter((a) => a.entidade_id === draft.id);
@@ -326,6 +331,44 @@ export function OportunidadeDetailPage() {
                     ))}
                 </SelectContent>
               </Select>
+            </Field>
+
+            <Field label="Projeto vinculado" className="sm:col-span-2">
+              <div className="flex items-center gap-2">
+                <Select
+                  value={draft.projeto_id || "__none__"}
+                  onValueChange={(v) =>
+                    setField("projeto_id", v === "__none__" ? undefined : v)
+                  }
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder="Sem projeto vinculado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">
+                      Sem projeto vinculado
+                    </SelectItem>
+                    {projetosDoCliente.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.codigo} · {p.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {projetoVinculado && (
+                  <Link
+                    to={`/projetos/${projetoVinculado.id}`}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] text-foreground hover:bg-muted"
+                    title="Abrir projeto vinculado"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    Abrir
+                  </Link>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Útil pra rastrear quais projetos geram mais upsell/cross-sell.
+              </p>
             </Field>
 
             <Field label="Categoria V4">

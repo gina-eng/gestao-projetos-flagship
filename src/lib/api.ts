@@ -645,6 +645,7 @@ function rowToOportunidade(r: Record<string, unknown>): Oportunidade {
   return {
     id: r.id as string,
     cliente_id: r.cliente_id as string,
+    projeto_id: (r.projeto_id as string) ?? undefined,
     produto_id: r.produto_id as string,
     variacao_id: (r.variacao_id as string) ?? undefined,
     nome: r.nome as string,
@@ -666,6 +667,7 @@ export async function upsertOportunidade(o: Oportunidade): Promise<void> {
   const { error } = await db().from("oportunidades").upsert({
     id: o.id,
     cliente_id: o.cliente_id,
+    projeto_id: o.projeto_id ?? null,
     produto_id: o.produto_id,
     variacao_id: o.variacao_id ?? null,
     nome: o.nome,

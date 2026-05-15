@@ -286,6 +286,7 @@ create index if not exists idx_parcelas_status on public.parcelas(status);
 create table if not exists public.oportunidades (
   id uuid primary key default gen_random_uuid(),
   cliente_id uuid not null references public.clientes(id) on delete restrict,
+  projeto_id uuid references public.projetos(id) on delete set null,
   produto_id text not null,                -- referencia products.id (catálogo V4)
   variacao_id text,
   nome text not null,
@@ -336,6 +337,15 @@ update public.oportunidades set etapa = 'fechado_perdido'
 
 alter table public.oportunidades add constraint oportunidades_etapa_check
   check (etapa in ('identificada','avancando','fechado_ganho','fechado_perdido'));
+
+-- ─── Migração 2026-05-15: re-introduz projeto_id (opcional) ─────────────
+-- Permite vincular uma oportunidade a um projeto específico do cliente.
+-- Útil para mapear "qual projeto gera mais oportunidades de upsell".
+alter table public.oportunidades
+  add column if not exists projeto_id uuid
+  references public.projetos(id) on delete set null;
+create index if not exists idx_oportunidades_projeto
+  on public.oportunidades(projeto_id);
 
 -- Auditoria (append-only)
 create table if not exists public.auditoria (
