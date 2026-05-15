@@ -99,15 +99,17 @@ export function ClientesPage() {
         </CardContent>
       </Card>
 
-      {filtrados.length === 0 ? (
+      {/* Kanban sempre aparece (colunas vazias mostram as fases mesmo sem clientes);
+          Lista mostra empty state quando filtradas==0. */}
+      {view === "kanban" ? (
+        <ClienteKanban clientes={filtrados} />
+      ) : filtrados.length === 0 ? (
         <EmptyState
           onCreate={() => {
             setEditando(null);
             setDialogOpen(true);
           }}
         />
-      ) : view === "kanban" ? (
-        <ClienteKanban clientes={filtrados} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtrados.map((c) => {
