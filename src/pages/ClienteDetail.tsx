@@ -184,19 +184,17 @@ export function ClienteDetailPage() {
 
   async function excluir() {
     if (!saved) return;
-    const qtdProjetos = projetos.filter((p) => p.cliente_id === saved.id).length;
-    if (qtdProjetos > 0) {
-      window.alert(
-        `Este cliente tem ${qtdProjetos} projeto(s) vinculado(s). ` +
-          "Exclua ou desvincule os projetos antes de excluir o cliente."
-      );
-      return;
-    }
+    const projetosAtivosCli = projetos.filter(
+      (p) => p.cliente_id === saved.id && p.status === "ativo"
+    ).length;
     const ok = window.confirm(
       `Excluir o cliente "${saved.sigla} · ${saved.nome_fantasia}"?\n\n` +
-        "Isso remove o cliente, contatos e conexões vinculados. " +
-        "A operação é PERMANENTE e não pode ser desfeita.\n\n" +
-        "Para apenas marcar como inativo, mude o Status no card de Dados."
+        "O cliente será marcado como inativo e sai das listagens ativas. " +
+        "Contatos, conexões e projetos vinculados são preservados.\n\n" +
+        (projetosAtivosCli > 0
+          ? `Atenção: existem ${projetosAtivosCli} projeto(s) ativo(s) vinculado(s) a este cliente.\n\n`
+          : "") +
+        "Você pode reverter pelo Histórico de alterações (botão Recuperar)."
     );
     if (!ok) return;
     await deleteCliente(saved.id);
@@ -390,10 +388,9 @@ export function ClienteDetailPage() {
                 Excluir este cliente
               </p>
               <p className="text-xs text-muted-foreground">
-                Remove permanentemente o cliente, stakeholders e conexões.
-                Não é possível excluir se houver projetos vinculados — exclua
-                ou desvincule os projetos primeiro. Para apenas marcar como
-                inativo, mude o Status no card de Dados.
+                Marca como inativo e tira das listagens ativas. Stakeholders,
+                conexões e projetos vinculados ficam preservados. Reversível
+                pelo Histórico de alterações (botão Recuperar).
               </p>
             </div>
             <Button

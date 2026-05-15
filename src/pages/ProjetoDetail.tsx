@@ -261,10 +261,9 @@ export function ProjetoDetailPage() {
     if (!saved) return;
     const ok = window.confirm(
       `Excluir o projeto "${saved.codigo} · ${saved.nome}"?\n\n` +
-        "Isso remove o projeto, pagamentos, parcelas, reuniões e squad " +
-        "vinculados. A operação é PERMANENTE e não pode ser desfeita.\n\n" +
-        "Para apenas encerrar o projeto sem perder histórico, mude o " +
-        "Status para 'Concluído' no card de Dados."
+        "O projeto será marcado como concluído e sai das listagens ativas. " +
+        "Dados (pagamentos, parcelas, reuniões, squad) são preservados.\n\n" +
+        "Você pode reverter pelo Histórico de alterações (botão Recuperar)."
     );
     if (!ok) return;
     await deleteProjeto(saved.id);
@@ -506,9 +505,9 @@ export function ProjetoDetailPage() {
                 Excluir este projeto
               </p>
               <p className="text-xs text-muted-foreground">
-                Remove permanentemente o projeto, pagamentos, parcelas,
-                reuniões e squad vinculados. Para apenas encerrar sem perder
-                histórico, mude o Status para "Concluído" no card de Dados.
+                Marca como concluído e tira das listagens ativas. Dados
+                relacionados (pagamentos, reuniões, squad) ficam preservados.
+                Reversível pelo Histórico de alterações (botão Recuperar).
               </p>
             </div>
             <Button
