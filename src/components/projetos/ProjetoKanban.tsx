@@ -10,8 +10,7 @@ import {
   type FaseProjeto,
   type SaudeProjeto,
 } from "@/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, variantCategoria } from "@/lib/utils";
 
 const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "critico"> = {
   saudavel: "saudavel",
@@ -138,15 +137,7 @@ export function ProjetoKanban({ projetos }: { projetos: Projeto[] }) {
                           <div className="mt-2 flex items-center justify-between gap-2">
                             {produto ? (
                               <Badge
-                                variant={
-                                  produto.categoria === "SABER"
-                                    ? "saber"
-                                    : produto.categoria === "TER"
-                                    ? "ter"
-                                    : produto.categoria === "EXECUTAR"
-                                    ? "executar"
-                                    : "potencializar"
-                                }
+                                variant={variantCategoria(produto.categoria)}
                                 className="text-[9px]"
                               >
                                 {CATEGORIAS.find((c) => c.value === produto.categoria)?.label}

@@ -40,7 +40,7 @@ import {
   SquadMembro,
   StatusProjeto,
 } from "@/types";
-import { formatCurrency, uid } from "@/lib/utils";
+import { formatCurrency, uid, variantCategoria } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -133,6 +133,7 @@ export function ProjetoFormDialog({
       TER: 0,
       EXECUTAR: 0,
       POTENCIALIZAR: 0,
+      DESTRAVA_RECEITA: 0,
     };
     produtosAtivos.forEach((p) => {
       out[p.categoria] += 1;
@@ -808,15 +809,7 @@ function CategoriaProdutoSeletor({
       {produtoSelecionado && (
         <div className="sm:col-span-2 flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
           <Badge
-            variant={
-              produtoSelecionado.categoria === "SABER"
-                ? "saber"
-                : produtoSelecionado.categoria === "TER"
-                ? "ter"
-                : produtoSelecionado.categoria === "EXECUTAR"
-                ? "executar"
-                : "potencializar"
-            }
+            variant={variantCategoria(produtoSelecionado.categoria)}
             className="text-[10px] shrink-0"
           >
             {categoriaLabel}

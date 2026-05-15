@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/layout/Layout";
 import { ProjetoFormDialog } from "@/components/projetos/ProjetoFormDialog";
 import { ProjetoKanban } from "@/components/projetos/ProjetoKanban";
 import { FasesManagerDialog } from "@/components/projetos/FasesManagerDialog";
-import { formatCurrency, formatDate, nomeProduto } from "@/lib/utils";
+import { formatCurrency, formatDate, nomeProduto, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   Projeto,
@@ -19,16 +19,6 @@ import {
   type SaudeProjeto,
   type Tier,
 } from "@/types";
-
-function variantCategoria(c?: string) {
-  return c === "SABER"
-    ? "saber"
-    : c === "TER"
-    ? "ter"
-    : c === "EXECUTAR"
-    ? "executar"
-    : "potencializar";
-}
 
 const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "critico"> = {
   saudavel: "saudavel",

@@ -11,7 +11,12 @@ export type SistemaConexao =
   | "drive"
   | "outro";
 
-export type CategoriaV4 = "SABER" | "TER" | "EXECUTAR" | "POTENCIALIZAR";
+export type CategoriaV4 =
+  | "SABER"
+  | "TER"
+  | "EXECUTAR"
+  | "POTENCIALIZAR"
+  | "DESTRAVA_RECEITA";
 export type Tier = "tiny" | "small" | "medium" | "large" | "enterprise";
 
 // FaseProjeto agora é uma string livre (id da fase no catálogo dinâmico de
@@ -469,10 +474,11 @@ export const FASES_DEFAULT: Fase[] = [
 ];
 
 export const CATEGORIAS: { value: CategoriaV4; label: string; descricao: string }[] = [
-  { value: "SABER", label: "Saber", descricao: "Consultoria estratégica." },
-  { value: "TER", label: "Ter", descricao: "Implementação pontual." },
-  { value: "EXECUTAR", label: "Executar", descricao: "Execução contínua." },
-  { value: "POTENCIALIZAR", label: "Potencializar", descricao: "Sucesso direcionado." },
+  { value: "SABER",            label: "Saber",            descricao: "Consultoria estratégica." },
+  { value: "TER",              label: "Ter",              descricao: "Implementação pontual." },
+  { value: "EXECUTAR",         label: "Executar",         descricao: "Execução contínua." },
+  { value: "POTENCIALIZAR",    label: "Potencializar",    descricao: "Sucesso direcionado." },
+  { value: "DESTRAVA_RECEITA", label: "Destrava Receita", descricao: "Aceleração comercial e geração de receita." },
 ];
 
 export const TIERS: { value: Tier; label: string }[] = [

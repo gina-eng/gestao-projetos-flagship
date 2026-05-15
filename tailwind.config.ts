@@ -64,6 +64,10 @@ export default {
           DEFAULT: "hsl(var(--potencializar))",
           foreground: "hsl(var(--potencializar-foreground))",
         },
+        destrava: {
+          DEFAULT: "hsl(var(--destrava))",
+          foreground: "hsl(var(--destrava-foreground))",
+        },
         header: {
           bg: "hsl(var(--header-bg))",
           foreground: "hsl(var(--header-foreground))",

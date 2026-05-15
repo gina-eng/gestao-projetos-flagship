@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/Layout";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, variantCategoria } from "@/lib/utils";
 import { CATEGORIAS, CategoriaV4 } from "@/types";
 import { supabaseConfigurado } from "@/lib/supabase";
 import { buscarProdutosSupabase } from "@/lib/produtos-sync";
@@ -222,17 +222,7 @@ export function ProdutosPage() {
               <Card key={p.id} className="h-full">
                 <CardContent className="space-y-3 p-5">
                   <div>
-                    <Badge
-                      variant={
-                        p.categoria === "SABER"
-                          ? "saber"
-                          : p.categoria === "TER"
-                          ? "ter"
-                          : p.categoria === "EXECUTAR"
-                          ? "executar"
-                          : "potencializar"
-                      }
-                    >
+                    <Badge variant={variantCategoria(p.categoria)}>
                       {CATEGORIAS.find((c) => c.value === p.categoria)?.label}
                     </Badge>
                     <p className="mt-2 text-title-card leading-tight">{p.nome}</p>

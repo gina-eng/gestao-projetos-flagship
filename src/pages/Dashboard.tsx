@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/Layout";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   MODELOS_VENDAS,
@@ -246,17 +246,7 @@ export function DashboardPage() {
             {projetosPorCategoria.map((cat) => (
               <div key={cat.value} className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <Badge
-                    variant={
-                      cat.value === "SABER"
-                        ? "saber"
-                        : cat.value === "TER"
-                        ? "ter"
-                        : cat.value === "EXECUTAR"
-                        ? "executar"
-                        : "potencializar"
-                    }
-                  >
+                  <Badge variant={variantCategoria(cat.value)}>
                     {cat.label}
                   </Badge>
                   <span className="text-sm text-content">

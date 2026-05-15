@@ -1003,6 +1003,7 @@ function ItemRow({
                 <SelectItem value="TER">Ter</SelectItem>
                 <SelectItem value="EXECUTAR">Executar</SelectItem>
                 <SelectItem value="POTENCIALIZAR">Potencializar</SelectItem>
+                <SelectItem value="DESTRAVA_RECEITA">Destrava Receita</SelectItem>
               </SelectContent>
             </Select>
             {erros[`item_${idx}_categoria`] && (

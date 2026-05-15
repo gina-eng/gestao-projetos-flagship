@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
-import { formatCurrency, formatDate, nomeProduto, uid } from "@/lib/utils";
+import { formatCurrency, formatDate, nomeProduto, uid, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   type Cliente,
@@ -322,15 +322,7 @@ export function ClienteDetailPage() {
                     <div className="flex items-center gap-3">
                       {produto && (
                         <Badge
-                          variant={
-                            produto.categoria === "SABER"
-                              ? "saber"
-                              : produto.categoria === "TER"
-                              ? "ter"
-                              : produto.categoria === "EXECUTAR"
-                              ? "executar"
-                              : "potencializar"
-                          }
+                          variant={variantCategoria(produto.categoria)}
                         >
                           {CATEGORIAS.find((c) => c.value === produto.categoria)?.label}
                         </Badge>

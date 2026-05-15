@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
-import { formatCurrency, formatDate, uid } from "@/lib/utils";
+import { formatCurrency, formatDate, uid, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   type CategoriaV4,
@@ -315,17 +315,7 @@ export function ProjetoDetailPage() {
               <span className="font-mono text-xs font-bold uppercase tracking-wide text-muted-foreground">
                 {draft.codigo}
               </span>
-              <Badge
-                variant={
-                  categoria?.value === "SABER"
-                    ? "saber"
-                    : categoria?.value === "TER"
-                    ? "ter"
-                    : categoria?.value === "EXECUTAR"
-                    ? "executar"
-                    : "potencializar"
-                }
-              >
+              <Badge variant={variantCategoria(categoria?.value)}>
                 {categoria?.label ?? "—"}
               </Badge>
               <Badge variant="outline" className="text-[10px]">

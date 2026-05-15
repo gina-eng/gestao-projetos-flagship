@@ -28,7 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { HistoricoAuditoria } from "@/components/HistoricoAuditoria";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, variantCategoria } from "@/lib/utils";
 import {
   CATEGORIAS,
   type CategoriaV4,
@@ -213,17 +213,7 @@ export function OportunidadeDetailPage() {
                 Oportunidade
               </span>
               {categoria && (
-                <Badge
-                  variant={
-                    categoria.value === "SABER"
-                      ? "saber"
-                      : categoria.value === "TER"
-                      ? "ter"
-                      : categoria.value === "EXECUTAR"
-                      ? "executar"
-                      : "potencializar"
-                  }
-                >
+                <Badge variant={variantCategoria(categoria.value)}>
                   {categoria.label}
                 </Badge>
               )}

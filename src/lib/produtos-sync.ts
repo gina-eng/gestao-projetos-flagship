@@ -4,7 +4,7 @@ import { CategoriaV4, Produto } from "@/types";
 // Schema REAL da tabela `products` no Supabase (V4):
 // - id           uuid
 // - produto      text                   → nome do produto
-// - categoria    categoria_produto      → enum lowercase (saber/ter/executar/potencializar)
+// - categoria    categoria_produto      → enum lowercase (saber/ter/executar/potencializar/destrava_receita)
 // - duracao      text                   → "Recorrente" ou número (dias/meses) ou null
 // - dono         text                   → responsável (não usado aqui)
 // - valor        text                   → preço numérico como string ("8070.95")
@@ -22,13 +22,18 @@ const CATEGORIAS_VALIDAS: CategoriaV4[] = [
   "TER",
   "EXECUTAR",
   "POTENCIALIZAR",
+  "DESTRAVA_RECEITA",
 ];
 
 const TABELA = import.meta.env.VITE_SUPABASE_PRODUTOS_TABLE || "products";
 
 function mapearProduto(row: ProdutoRow): Produto {
-  // categoria vem em lowercase ("saber"), normaliza pro nosso enum
-  const catUpper = (row.categoria ?? "").toUpperCase() as CategoriaV4;
+  // categoria vem em lowercase ("saber") ou com espaços ("destrava receita").
+  // Normaliza espaços/hífens em underscore e upper-case antes de comparar.
+  const catUpper = (row.categoria ?? "")
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .toUpperCase() as CategoriaV4;
   const categoria = CATEGORIAS_VALIDAS.includes(catUpper)
     ? catUpper
     : "EXECUTAR";

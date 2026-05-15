@@ -15,6 +15,7 @@ const badgeVariants = cva(
         ter: "border-transparent bg-ter/15 text-ter hover:bg-ter/20",
         executar: "border-transparent bg-executar/15 text-executar hover:bg-executar/20",
         potencializar: "border-transparent bg-potencializar/15 text-potencializar hover:bg-potencializar/20",
+        destrava: "border-transparent bg-destrava/15 text-destrava hover:bg-destrava/20",
         saudavel: "border-transparent bg-emerald-100 text-emerald-700",
         alerta: "border-transparent bg-amber-100 text-amber-800",
         cuidado: "border-transparent bg-orange-100 text-orange-800",

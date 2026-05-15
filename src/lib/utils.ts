@@ -5,6 +5,32 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// Mapeia a categoria V4 do produto para a variant visual usada em Badges
+// e o tone dos StatBoxes. Centralizado aqui pra manter consistência.
+export type CategoriaTone =
+  | "saber"
+  | "ter"
+  | "executar"
+  | "potencializar"
+  | "destrava";
+
+export function variantCategoria(c?: string | null): CategoriaTone | "outline" {
+  switch (c) {
+    case "SABER":
+      return "saber";
+    case "TER":
+      return "ter";
+    case "EXECUTAR":
+      return "executar";
+    case "POTENCIALIZAR":
+      return "potencializar";
+    case "DESTRAVA_RECEITA":
+      return "destrava";
+    default:
+      return "outline";
+  }
+}
+
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
