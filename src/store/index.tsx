@@ -83,13 +83,6 @@ interface AppActions {
   saveFase: (fase: Fase) => Promise<void>;
   deleteFase: (id: string) => Promise<string | null>;
   reordenarFases: (idsEmOrdem: string[]) => Promise<void>;
-
-  // Importa dados que estão no localStorage para o Supabase (one-shot).
-  importarLocalStorage: () => Promise<{
-    ok: boolean;
-    detalhes: Record<string, number>;
-    erro?: string;
-  }>;
 }
 
 type AppContextValue = AppState & AppActions & { gerarCodigoProjeto: (clienteId: string) => string };
@@ -129,11 +122,37 @@ function fazerRegistro(
   };
 }
 
+// Chaves de localStorage obsoletas (dados do app pré-Supabase).
+// São limpas one-shot na primeira execução da versão Supabase.
+const CHAVES_OBSOLETAS = [
+  STORAGE_KEYS.clientes,
+  STORAGE_KEYS.investidores,
+  STORAGE_KEYS.projetos,
+  STORAGE_KEYS.pagamentos,
+  STORAGE_KEYS.fases,
+  STORAGE_KEYS.auditoria,
+  STORAGE_KEYS.usuarios,
+  STORAGE_KEYS.sessao,
+  STORAGE_KEYS.seedDone,
+];
+const LIMPEZA_FLAG = "v4gp:cleanup_v2_done";
+
+function limpezaUnica() {
+  if (typeof window === "undefined") return;
+  if (window.localStorage.getItem(LIMPEZA_FLAG) === "1") return;
+  for (const k of CHAVES_OBSOLETAS) {
+    window.localStorage.removeItem("v4gp:" + k);
+  }
+  window.localStorage.setItem(LIMPEZA_FLAG, "1");
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   // Estado inicial vazio. Os dados vêm do Supabase após o login.
   // `produtos` continua persistido em localStorage porque é cache do
   // catálogo externo (V4), sincronizado sob demanda.
   const [state, setState] = useState<AppState>(() => {
+    // Limpa sobras de versões anteriores (clientes/projetos/etc em LS).
+    limpezaUnica();
     const produtosBrutos = readKey<Produto[]>(STORAGE_KEYS.produtos, []);
     const produtosNormalizados = produtosBrutos.map((p) => {
       const catNorm = (p.categoria ?? "").toString().toUpperCase();
@@ -963,71 +982,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [state.clientes, state.projetos]
   );
 
-  // ─── Importador one-shot do localStorage para o Supabase ─────────────
-  // Lê dados antigos persistidos em localStorage (clientes/projetos/etc.)
-  // e faz upsert em massa no Supabase. Útil em primeiro acesso pós-Auth
-  // pra trazer dados criados antes da migração.
-  const importarLocalStorage = useCallback(async () => {
-    const detalhes: Record<string, number> = {
-      investidores: 0,
-      fases: 0,
-      clientes: 0,
-      projetos: 0,
-      pagamentos: 0,
-    };
-    try {
-      const lsClientes = readKey<Cliente[]>(STORAGE_KEYS.clientes, []);
-      const lsInvestidores = readKey<Investidor[]>(STORAGE_KEYS.investidores, []);
-      const lsFases = readKey<Fase[]>(STORAGE_KEYS.fases, []);
-      const lsProjetos = readKey<Projeto[]>(STORAGE_KEYS.projetos, []);
-      const lsPagamentos = readKey<Pagamento[]>(STORAGE_KEYS.pagamentos, []);
-
-      // Ordem importa por FKs:
-      // 1. investidores (ref por projetos.squad)
-      for (const i of lsInvestidores) {
-        await api.upsertInvestidor(i);
-        detalhes.investidores++;
-      }
-      // 2. fases (ref por projetos.fase_atual)
-      for (const f of lsFases) {
-        await api.upsertFase(f);
-        detalhes.fases++;
-      }
-      // 3. clientes (ref por projetos.cliente_id)
-      for (const c of lsClientes) {
-        await api.upsertCliente(c);
-        detalhes.clientes++;
-      }
-      // 4. projetos (depende de clientes/fases/investidores)
-      for (const p of lsProjetos) {
-        await api.upsertProjeto(p);
-        detalhes.projetos++;
-      }
-      // 5. pagamentos (depende de projetos)
-      for (const pg of lsPagamentos) {
-        await api.upsertPagamento(pg);
-        detalhes.pagamentos++;
-      }
-
-      // Após importar, refaz fetch para sincronizar state com Supabase.
-      const dados = await api.fetchTudo();
-      setState((s) => ({
-        ...s,
-        clientes: dados.clientes,
-        investidores: dados.investidores,
-        fases: dados.fases.length > 0 ? dados.fases : FASES_DEFAULT,
-        projetos: dados.projetos,
-        pagamentos: dados.pagamentos,
-        auditoria: dados.auditoria,
-      }));
-
-      return { ok: true, detalhes };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Erro ao importar.";
-      console.error("[importarLocalStorage] falha:", err);
-      return { ok: false, detalhes, erro: msg };
-    }
-  }, []);
 
   const value = useMemo<AppContextValue>(
     () => ({
@@ -1052,7 +1006,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
-      importarLocalStorage,
     }),
     [
       state,
@@ -1076,7 +1029,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteFase,
       reordenarFases,
       gerarCodigoProjeto,
-      importarLocalStorage,
     ]
   );
 

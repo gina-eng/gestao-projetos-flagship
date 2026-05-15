@@ -20,7 +20,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/Layout";
-import { ImportarLocalStorageBanner } from "@/components/ImportarLocalStorageBanner";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   CATEGORIAS,
@@ -178,7 +177,6 @@ export function DashboardPage() {
 
   return (
     <div className="spacing-section">
-      <ImportarLocalStorageBanner />
       <PageHeader
         title={`Olá, ${sessao?.nome?.split(" ")[0] ?? "operador"}`}
         description="Visão geral da carteira da unidade."
