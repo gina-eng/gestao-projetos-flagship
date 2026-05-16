@@ -116,19 +116,15 @@ export function DashboardPage() {
       count: projetosAtivos.filter((p) => p.fase_atual === fase.id).length,
     }));
 
-  const projetosPorCategoria = CATEGORIAS.map((cat) => {
-    const list = projetosAtivos.filter((p) =>
+  // Quantos projetos ativos têm pelo menos 1 produto de cada categoria.
+  // Não tentamos rateá-los por valor: como a negociação tem 1 valor único
+  // para N produtos, atribuir TCV/receita por categoria seria arbitrário.
+  const projetosPorCategoria = CATEGORIAS.map((cat) => ({
+    ...cat,
+    count: projetosAtivos.filter((p) =>
       categoriasDe(p.id).includes(cat.value)
-    );
-    return {
-      ...cat,
-      count: list.length,
-      receita: list
-        .filter((p) => p.modelo_cobranca === "recorrente")
-        .reduce((acc, p) => acc + p.valor_total, 0),
-      tcv: list.reduce((acc, p) => acc + tcvDe(p), 0),
-    };
-  });
+    ).length,
+  }));
 
   // Helper: pega o cliente do projeto
   function clienteDe(projetoId: string) {
@@ -252,28 +248,19 @@ export function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-title-card">Carteira por categoria</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-2">
             {projetosPorCategoria.map((cat) => (
-              <div key={cat.value} className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant={variantCategoria(cat.value)}>
-                    {cat.label}
-                  </Badge>
-                  <span className="text-sm text-content">
-                    {cat.count} {cat.count === 1 ? "projeto" : "projetos"}
+              <div
+                key={cat.value}
+                className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card px-3 py-2"
+              >
+                <Badge variant={variantCategoria(cat.value)}>{cat.label}</Badge>
+                <span className="text-sm font-semibold tabular-nums text-foreground">
+                  {cat.count}{" "}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {cat.count === 1 ? "projeto" : "projetos"}
                   </span>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold tabular-nums text-foreground">
-                    {formatCurrency(cat.receita)}
-                    <span className="ml-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      / mês
-                    </span>
-                  </p>
-                  <p className="text-[11px] tabular-nums text-muted-foreground">
-                    TCV {formatCurrency(cat.tcv)}
-                  </p>
-                </div>
+                </span>
               </div>
             ))}
           </CardContent>
