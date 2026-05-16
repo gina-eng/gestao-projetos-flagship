@@ -408,7 +408,10 @@ export function HandoffPage() {
           ? `[Handoff comercial] ${form.observacoes.trim()}`
           : "Handoff comercial via formulário público.",
       };
-      saveCliente(cliente);
+      // IMPORTANTE: aguarda o cliente persistir no Supabase ANTES de criar
+      // projetos. Sem o await, o INSERT do projeto dispara primeiro e viola
+      // a foreign key projetos_cliente_id_fkey.
+      await saveCliente(cliente);
 
       // Cria N projetos (um por negociação). Como o cliente é novo, a venda
       // é a primeira (`venda_seq = 1`). As negociações compartilham o mesmo
@@ -484,7 +487,9 @@ export function HandoffPage() {
           squad: [],
           ...linksDocs,
         };
-        saveProjeto(projeto);
+        // Sequencial (await) pra evitar race com o re-avaliarStatusCliente
+        // que roda dentro de saveProjeto.
+        await saveProjeto(projeto);
       }
 
       // Silencia gerarCodigoProjeto (não usamos aqui — geramos manualmente).
