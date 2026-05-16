@@ -47,7 +47,10 @@ import {
 } from "@/types";
 import {
   categoriasDoTipo,
+  formatCnpj,
   formatCurrency,
+  formatMoedaBR,
+  parseMoedaBR,
   suggestSigla,
   uid,
   variantCategoria,
@@ -221,7 +224,6 @@ export function HandoffPage() {
     if (!form.segmento) e.segmento = "Selecione";
     if (form.segmento === "outros" && !form.segmento_outro.trim())
       e.segmento_outro = "Descreva";
-    if (!form.regiao_atuacao) e.regiao_atuacao = "Selecione";
     if (form.modelo_vendas.length === 0)
       e.modelo_vendas = "Selecione ao menos um";
     if (!siglaAuto) e.nome_fantasia = "Não conseguimos gerar sigla — verifique o nome";
@@ -382,7 +384,9 @@ export function HandoffPage() {
         segmento: form.segmento as Segmento,
         segmento_outro: form.segmento_outro.trim() || undefined,
         nicho: form.nicho.trim() || undefined,
-        regiao_atuacao: form.regiao_atuacao as RegiaoAtuacao,
+        regiao_atuacao: form.regiao_atuacao
+          ? (form.regiao_atuacao as RegiaoAtuacao)
+          : undefined,
         modelo_vendas: form.modelo_vendas,
         tier: form.tier,
         endereco: form.endereco.trim() || undefined,
@@ -684,8 +688,10 @@ function StepCliente({
               <Label className="text-xs">CNPJ</Label>
               <Input
                 value={form.cnpj}
-                onChange={(e) => setField("cnpj", e.target.value)}
+                onChange={(e) => setField("cnpj", formatCnpj(e.target.value))}
                 placeholder="00.000.000/0000-00"
+                inputMode="numeric"
+                maxLength={18}
                 className="h-9"
               />
             </div>
@@ -740,7 +746,7 @@ function StepCliente({
               </div>
             )}
             <div className="space-y-1">
-              <Label className="text-xs">Região *</Label>
+              <Label className="text-xs">Região</Label>
               <Select
                 value={form.regiao_atuacao}
                 onValueChange={(v) => setField("regiao_atuacao", v as RegiaoAtuacao)}
@@ -756,9 +762,6 @@ function StepCliente({
                   ))}
                 </SelectContent>
               </Select>
-              {erros.regiao_atuacao && (
-                <p className="text-[11px] text-destructive">{erros.regiao_atuacao}</p>
-              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Tier</Label>
@@ -1221,16 +1224,24 @@ function NegociacaoCard({
                 ? "TCV (valor total do contrato) *"
                 : "Valor total da negociação *"}
             </Label>
-            <Input
-              type="number"
-              step="0.01"
-              value={negociacao.valor_total || ""}
-              onChange={(e) =>
-                onUpdate(negociacao.id, { valor_total: Number(e.target.value) })
-              }
-              className="h-9"
-              placeholder={isExecutar ? "Ex: 60000" : "Soma cheia dos produtos"}
-            />
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                R$
+              </span>
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={formatMoedaBR(negociacao.valor_total)}
+                onChange={(e) => {
+                  const n = parseMoedaBR(e.target.value);
+                  onUpdate(negociacao.id, {
+                    valor_total: Number.isFinite(n) ? n : 0,
+                  });
+                }}
+                className="h-9 pl-9 text-right tabular-nums"
+                placeholder={isExecutar ? "60.000,00" : "0,00"}
+              />
+            </div>
             {erros[`neg_${idx}_valor`] && (
               <p className="text-[10px] text-destructive">
                 {erros[`neg_${idx}_valor`]}

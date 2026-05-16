@@ -179,6 +179,38 @@ export const TIPO_NEGOCIACAO_LABEL_CURTO: Record<TipoNegociacao, string> = {
   recorrente_executar: "Executar",
 };
 
+// ─── Máscaras de input ───
+
+// Formata digitação progressiva de CNPJ no padrão XX.XXX.XXX/XXXX-XX.
+// Aceita qualquer string de entrada (extrai dígitos) e trunca em 14.
+export function formatCnpj(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 14);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length <= 12)
+    return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+// Converte uma entrada de moeda BRL (ex.: "1.234,56" ou "R$ 1.234,56") em number.
+// Retorna NaN para entradas vazias/invalidas — o caller decide o fallback.
+export function parseMoedaBR(raw: string): number {
+  const limpo = raw.replace(/[^\d,-]/g, "").replace(",", ".");
+  if (!limpo) return NaN;
+  return Number(limpo);
+}
+
+// Formata um número como string monetária BRL "1.234,56" (sem o R$ no início,
+// pra usar dentro de Input com prefixo visual separado).
+export function formatMoedaBR(valor: number): string {
+  if (!Number.isFinite(valor) || valor === 0) return "";
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(valor);
+}
+
 export function suggestSigla(nomeFantasia: string): string {
   const clean = nomeFantasia
     .toUpperCase()
