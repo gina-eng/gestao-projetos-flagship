@@ -22,6 +22,7 @@ import { ProjetoGantt } from "@/components/projetos/ProjetoGantt";
 import { FasesManagerDialog } from "@/components/projetos/FasesManagerDialog";
 import {
   categoriasDoProjeto,
+  ehFaseEncerramento,
   formatCurrency,
   formatDate,
   produtosDoProjeto,
@@ -73,7 +74,20 @@ export function ProjetosPage() {
   const filtrados = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return projetos.filter((p) => {
-      if (p.status !== "ativo" && p.status !== "pausado") return false;
+      // Mostra projetos ativos/pausados normalmente. Para concluido/churn,
+      // só mostra se estiverem na fase de encerramento correspondente —
+      // soft-deletes (status="concluido" mas em fase qualquer) ficam ocultos.
+      const faseObj = fases.find((f) => f.id === p.fase_atual);
+      if (p.status === "ativo" || p.status === "pausado") {
+        // ok, segue
+      } else if (
+        (p.status === "concluido" || p.status === "churn") &&
+        ehFaseEncerramento(faseObj?.nome)
+      ) {
+        // ok, mostra na coluna de encerramento do kanban
+      } else {
+        return false;
+      }
       const cli = clientes.find((c) => c.id === p.cliente_id);
       const cats = categoriasDoProjeto(p, produtos);
       const prods = produtosDoProjeto(p, produtos);
@@ -96,7 +110,7 @@ export function ProjetosPage() {
       }
       return true;
     });
-  }, [projetos, produtos, clientes, filtroCategoria, filtroTier, filtroSaude, busca]);
+  }, [projetos, produtos, clientes, fases, filtroCategoria, filtroTier, filtroSaude, busca]);
 
   const filtroAtivo =
     filtroCategoria !== "all" ||
