@@ -738,7 +738,7 @@ function EvolucaoCarteira({
 
       <CardContent>
         {/* Sumário compacto — mini-cards (Receita do mês + TCV + Em tratativa
-            quando há + Projetos ativos + Aquisição + Churn). */}
+            quando há + Projetos ativos + Clientes + Churn). */}
         <div
           className={cn(
             "mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2",
@@ -764,7 +764,7 @@ function EvolucaoCarteira({
           />
           <MetricSummary
             icon={Users}
-            label="Aquisição"
+            label="Clientes"
             colorClass="bg-ter"
             accentClass="bg-ter/10 text-ter"
             total={totais.clientes}
