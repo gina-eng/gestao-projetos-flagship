@@ -33,6 +33,7 @@ import {
 import {
   CATEGORIAS,
   MODELOS_VENDAS,
+  type Projeto,
   SAUDE_LABEL,
   TIERS,
   type SaudeProjeto,
@@ -260,6 +261,7 @@ export function DashboardPage() {
         clientes={clientes}
         projetos={projetos}
         pagamentos={pagamentos}
+        fases={fases}
         receitaMes={receitaMes}
         tcv={receitaTCV}
         tratativa={tratativaResumo}
@@ -548,6 +550,14 @@ interface EvolucaoItem {
   projetosNovos: number;
   logoChurn: number;        // clientes que viraram churn no mês
   revenueChurn: number;     // receita recorrente perdida no mês (MRR dos projetos churn)
+  // Churn em nível de projeto (fase "Concluído Churn"):
+  // - projetosChurn: nº de projetos que entraram em ConcluídoChurn neste mês
+  //   (atribuído pelo data_conclusao_real, preenchido automaticamente quando
+  //   o card é movido para a fase no kanban).
+  // - tcvPerdido: soma de (TCV contratado − já pago) desses projetos. É o
+  //   valor que NÃO vai entrar mais no caixa.
+  projetosChurn: number;
+  tcvPerdido: number;
   receita: number;          // total das parcelas do mês (pagas + em aberto)
   receitaAdicionada: number; // soma do valor mensal de novos contratos recorrentes do mês
 }
@@ -563,6 +573,7 @@ function EvolucaoCarteira({
   clientes,
   projetos,
   pagamentos,
+  fases,
   receitaMes,
   tcv,
   tratativa,
@@ -570,10 +581,31 @@ function EvolucaoCarteira({
   clientes: ReturnType<typeof useApp>["clientes"];
   projetos: ReturnType<typeof useApp>["projetos"];
   pagamentos: ReturnType<typeof useApp>["pagamentos"];
+  fases: ReturnType<typeof useApp>["fases"];
   receitaMes: { total: number; recebido: number; aberto: number };
   tcv: number;
   tratativa: { quantidade: number; tcv: number };
 }) {
+  // IDs das fases "Concluído Churn" — projetos nelas viram churn de projeto.
+  const idsFasesConcluidoChurn = new Set(
+    fases.filter((f) => ehFaseConcluidoChurn(f.nome)).map((f) => f.id)
+  );
+
+  // Helper: soma de parcelas pagas de um projeto.
+  function totalPagoDoProjeto(projetoId: string): number {
+    return pagamentos
+      .filter((pag) => pag.projeto_id === projetoId)
+      .flatMap((pag) => pag.parcelas)
+      .filter((par) => par.status === "pago")
+      .reduce((acc, par) => acc + par.valor, 0);
+  }
+
+  // TCV contratado de um projeto (para calcular o "perdido").
+  function tcvContratadoDoProjeto(p: Projeto): number {
+    return p.modelo_cobranca === "recorrente"
+      ? p.valor_total * (p.lt_meses ?? 12)
+      : p.valor_total;
+  }
   const [periodo, setPeriodo] = useState<number>(6);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
@@ -632,7 +664,7 @@ function EvolucaoCarteira({
         return true;
       }).length;
 
-      // Clientes que viraram churn neste mês
+      // Clientes que viraram churn neste mês (nível cliente, antigo)
       const clientesChurnNoMes = clientes.filter((c) => {
         if (!c.data_churn) return false;
         const d = new Date(c.data_churn);
@@ -646,6 +678,23 @@ function EvolucaoCarteira({
           )
           .reduce((s, p) => s + p.valor_total, 0);
         return acc + mrrCliente;
+      }, 0);
+
+      // Churn em nível de projeto: cards movidos para "Concluído Churn" neste
+      // mês (data_conclusao_real cai no intervalo). O TCV perdido é a soma do
+      // TCV contratado menos o que já foi pago — representa o valor que NÃO
+      // vai mais ser recebido.
+      const projetosChurnLista = projetos.filter((p) => {
+        if (!idsFasesConcluidoChurn.has(p.fase_atual)) return false;
+        if (!p.data_conclusao_real) return false;
+        const d = new Date(p.data_conclusao_real);
+        return d >= inicio && d < fim;
+      });
+      const projetosChurn = projetosChurnLista.length;
+      const tcvPerdido = projetosChurnLista.reduce((acc, p) => {
+        const contratado = tcvContratadoDoProjeto(p);
+        const pago = totalPagoDoProjeto(p.id);
+        return acc + Math.max(contratado - pago, 0);
       }, 0);
 
       const receita = pagamentos
@@ -670,6 +719,8 @@ function EvolucaoCarteira({
         projetosNovos,
         logoChurn,
         revenueChurn,
+        projetosChurn,
+        tcvPerdido,
         receita,
         receitaAdicionada,
       });
@@ -698,8 +749,18 @@ function EvolucaoCarteira({
       receita: acc.receita + e.receita,
       logoChurn: acc.logoChurn + e.logoChurn,
       revenueChurn: acc.revenueChurn + e.revenueChurn,
+      projetosChurn: acc.projetosChurn + e.projetosChurn,
+      tcvPerdido: acc.tcvPerdido + e.tcvPerdido,
     }),
-    { clientes: 0, projetos: 0, receita: 0, logoChurn: 0, revenueChurn: 0 }
+    {
+      clientes: 0,
+      projetos: 0,
+      receita: 0,
+      logoChurn: 0,
+      revenueChurn: 0,
+      projetosChurn: 0,
+      tcvPerdido: 0,
+    }
   );
 
   const mesAtualIdx = evolucao.length - 1;
@@ -820,11 +881,13 @@ function EvolucaoCarteira({
             label="Churn"
             colorClass="bg-red-500"
             accentClass="bg-red-100 text-red-700"
-            total={totais.logoChurn}
-            atual={atual.logoChurn}
+            total={totais.projetosChurn + totais.logoChurn}
+            atual={atual.projetosChurn + atual.logoChurn}
             delta={null}
             format={(v) => String(v)}
-            subtitulo={`${formatCurrency(totais.revenueChurn)} de receita perdida`}
+            subtitulo={`${formatCurrency(
+              totais.tcvPerdido + totais.revenueChurn
+            )} de TCV perdido`}
           />
         </div>
 
@@ -977,6 +1040,30 @@ function EvolucaoCarteira({
                           label="Receita mês adicionada"
                           value={formatCurrency(e.receitaAdicionada)}
                         />
+                        {(e.projetosChurn > 0 || e.logoChurn > 0) && (
+                          <>
+                            <div className="my-1.5 border-t border-border/60" />
+                            {e.projetosChurn > 0 && (
+                              <>
+                                <TooltipRow
+                                  dotClass="bg-red-500"
+                                  label={`Churn (${e.projetosChurn} ${e.projetosChurn === 1 ? "projeto" : "projetos"})`}
+                                  value={formatCurrency(e.tcvPerdido)}
+                                />
+                                <p className="pl-3 text-[10px] italic text-muted-foreground">
+                                  TCV perdido (parcelas que não vão entrar)
+                                </p>
+                              </>
+                            )}
+                            {e.logoChurn > 0 && (
+                              <TooltipRow
+                                dotClass="bg-red-400"
+                                label={`Churn de cliente (${e.logoChurn})`}
+                                value={formatCurrency(e.revenueChurn)}
+                              />
+                            )}
+                          </>
+                        )}
                         {idx === mesAtualIdx && tratativa.quantidade > 0 && (
                           <>
                             <div className="my-1.5 border-t border-border/60" />

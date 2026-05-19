@@ -22,7 +22,7 @@ import {
 import { readKey, STORAGE_KEYS, writeKey } from "./storage";
 import * as api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
-import { uid } from "@/lib/utils";
+import { ehFaseEncerramento, uid } from "@/lib/utils";
 import {
   diffCliente,
   diffInvestidor,
@@ -1018,9 +1018,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (projetoId: string, novaFase: Projeto["fase_atual"]) => {
       const proj = state.projetos.find((p) => p.id === projetoId);
       if (!proj || proj.fase_atual === novaFase) return;
-      const novo: Projeto = { ...proj, fase_atual: novaFase };
+      // Ao entrar numa fase de encerramento (Concluído / Concluído Churn) e
+      // ainda não houver `data_conclusao_real`, registra a data de hoje.
+      // Isso permite atribuir corretamente o churn/conclusão ao mês no
+      // relatório de evolução da carteira.
+      const novaFaseObj = state.fases.find((f) => f.id === novaFase);
+      const entrouEmEncerramento =
+        ehFaseEncerramento(novaFaseObj?.nome) && !proj.data_conclusao_real;
+      const dataConclusaoReal = entrouEmEncerramento
+        ? new Date().toISOString().slice(0, 10)
+        : proj.data_conclusao_real;
+      const novo: Projeto = {
+        ...proj,
+        fase_atual: novaFase,
+        data_conclusao_real: dataConclusaoReal,
+      };
       try {
-        await api.moveProjetoFase(projetoId, novaFase);
+        // Persiste a mudança completa (fase + data_conclusao_real) quando a
+        // data foi atualizada; senão usa o atalho mais leve de moveFase.
+        if (entrouEmEncerramento) {
+          await api.upsertProjeto(novo);
+        } else {
+          await api.moveProjetoFase(projetoId, novaFase);
+        }
       } catch (err) {
         notificarErro("mover projeto", err);
         return;
