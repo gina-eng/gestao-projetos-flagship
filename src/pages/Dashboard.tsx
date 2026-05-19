@@ -635,7 +635,18 @@ function EvolucaoCarteira({
     return out;
   })();
 
-  const maxReceita = Math.max(1, ...evolucao.map((e) => e.receita));
+  // Estimativa de "receita mensal equivalente" do que está em tratativa:
+  // como o TCV em tratativa é total, dividimos por 12 (média anual) só pra
+  // poder representá-lo na escala mensal do gráfico.
+  const tratativaMensalEquivalente = tratativa.tcv > 0 ? tratativa.tcv / 12 : 0;
+  // O max inclui a soma (receita do mês atual + tratativa) pra a extensão
+  // hachurada caber no gráfico sem cortar.
+  const receitaMesAtual = evolucao[evolucao.length - 1]?.receita ?? 0;
+  const maxReceita = Math.max(
+    1,
+    ...evolucao.map((e) => e.receita),
+    receitaMesAtual + tratativaMensalEquivalente
+  );
   const maxAtivos = Math.max(1, ...evolucao.map((e) => e.projetosAtivosFim));
 
   const totais = evolucao.reduce(
@@ -685,6 +696,25 @@ function EvolucaoCarteira({
             Barras = receita do mês. Linha = projetos ativos acumulados. Passe o
             mouse em um mês para ver novos, churn e receita perdida.
           </p>
+          {tratativaMensalEquivalente > 0 && (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span
+                aria-hidden
+                className="inline-block h-2.5 w-3 rounded-sm border border-red-500/70"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(135deg, rgba(239,68,68,0.55) 0 3px, rgba(239,68,68,0.1) 3px 6px)",
+                }}
+              />
+              <span>
+                Hachurado vermelho no mês atual = TCV{" "}
+                <strong className="text-foreground">
+                  {formatCurrency(tratativa.tcv)}
+                </strong>{" "}
+                em aberto (tratativa).
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex rounded-md border border-input bg-background p-0.5">
@@ -769,20 +799,39 @@ function EvolucaoCarteira({
             style={{ bottom: labelHeight }}
           >
             {/* Camada 1: barras (sem gap horizontal — cada coluna ocupa
-                100/n% exato, com padding interno para parecer espaçada) */}
+                100/n% exato, com padding interno para parecer espaçada).
+                Na barra do mês atual, sobrepomos uma extensão hachurada
+                vermelha representando o TCV em tratativa (em escala mensal). */}
             <div className="flex h-full items-end">
               {evolucao.map((e, idx) => {
                 const altura = (e.receita / maxReceita) * 100;
                 const isAtual = idx === mesAtualIdx;
                 const isHover = hoverIdx === idx;
+                const mostrarTratativa =
+                  isAtual && tratativaMensalEquivalente > 0;
+                const alturaTratativa = mostrarTratativa
+                  ? (tratativaMensalEquivalente / maxReceita) * 100
+                  : 0;
                 return (
                   <div
                     key={e.key}
                     className="relative flex h-full flex-1 flex-col justify-end px-1"
                   >
+                    {mostrarTratativa && (
+                      <div
+                        className="w-full rounded-t border-t border-red-500/70"
+                        style={{
+                          height: `${Math.max(alturaTratativa, 3)}%`,
+                          backgroundImage:
+                            "repeating-linear-gradient(135deg, rgba(239,68,68,0.45) 0 4px, rgba(239,68,68,0.08) 4px 8px)",
+                        }}
+                        title={`Em tratativa (em aberto): ${formatCurrency(tratativa.tcv)} TCV — ${tratativa.quantidade} projeto(s)`}
+                      />
+                    )}
                     <div
                       className={cn(
-                        "w-full rounded-t transition-all",
+                        "w-full transition-all",
+                        mostrarTratativa ? "rounded-none" : "rounded-t",
                         "bg-primary/65",
                         isHover ? "opacity-100" : isAtual ? "opacity-90" : "opacity-80"
                       )}
