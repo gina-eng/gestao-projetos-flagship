@@ -222,45 +222,30 @@ export function DashboardPage() {
       />
 
       {tratativaResumo.quantidade > 0 && (
-        <Card className="border-red-200 bg-red-50/40">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="flex h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              <CardTitle className="text-title-card text-red-700">
-                Em tratativa — fora de operação
-              </CardTitle>
-            </div>
-            <Button variant="ghost" size="sm" asChild className="text-red-700">
-              <Link to="/projetos">Ver no Kanban</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="rounded-md border border-red-200 bg-white px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">
-                  Cards
-                </p>
-                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
-                  {tratativaResumo.quantidade}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {tratativaResumo.quantidade === 1 ? "projeto" : "projetos"} aguardando início
-                </p>
-              </div>
-              <div className="rounded-md border border-red-200 bg-white px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">
-                  TCV em tratativa
-                </p>
-                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
-                  {formatCurrency(tratativaResumo.tcv)}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Soma do valor de contrato
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-red-200 bg-red-50/50 px-3 py-2 text-xs">
+          <span className="flex items-center gap-1.5 font-medium text-red-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+            Em tratativa
+          </span>
+          <span className="text-muted-foreground">
+            <span className="font-semibold tabular-nums text-foreground">
+              {tratativaResumo.quantidade}
+            </span>{" "}
+            {tratativaResumo.quantidade === 1 ? "card" : "cards"}
+          </span>
+          <span className="text-muted-foreground">
+            TCV{" "}
+            <span className="font-semibold tabular-nums text-foreground">
+              {formatCurrency(tratativaResumo.tcv)}
+            </span>
+          </span>
+          <Link
+            to="/projetos"
+            className="ml-auto text-[11px] font-medium text-red-700 hover:underline"
+          >
+            Ver no Kanban →
+          </Link>
+        </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
