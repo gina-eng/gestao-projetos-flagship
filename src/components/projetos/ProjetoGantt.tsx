@@ -25,6 +25,15 @@ const saudeBarra: Record<SaudeProjeto, string> = {
   critico: "bg-red-500",
 };
 
+// Identifica fases "pré-operação" pelo nome — projetos ainda em negociação
+// (ex.: "Em tratativa") devem aparecer destacados em vermelho no gantt
+// independente da saúde, porque não estão operando ainda.
+function ehFasePreOperacao(faseNome: string | undefined): boolean {
+  if (!faseNome) return false;
+  const n = faseNome.toLowerCase();
+  return n.includes("tratativa");
+}
+
 // Volta o sábado/domingo pra segunda mais próxima — a grade semanal usa
 // segunda como início de semana. Mutaria a referência, então sempre clonamos.
 function startOfWeek(d: Date): Date {
@@ -68,7 +77,7 @@ interface LinhaGantt {
 }
 
 export function ProjetoGantt({ projetos }: { projetos: Projeto[] }) {
-  const { clientes, produtos } = useApp();
+  const { clientes, produtos, fases } = useApp();
 
   const linhas = useMemo<LinhaGantt[]>(() => {
     return projetos
@@ -227,6 +236,8 @@ export function ProjetoGantt({ projetos }: { projetos: Projeto[] }) {
               const cliente = clientes.find((c) => c.id === projeto.cliente_id);
               const prods = produtosDoProjeto(projeto, produtos);
               const cats = categoriasDoProjeto(projeto, produtos);
+              const faseDoProjeto = fases.find((f) => f.id === projeto.fase_atual);
+              const preOperacao = ehFasePreOperacao(faseDoProjeto?.nome);
               const offsetDias = diffDays(inicioJanela, inicio);
               const duracaoDias = Math.max(diffDays(inicio, fim), 1);
               const left = (offsetDias / 7) * larguraSemana;
@@ -272,10 +283,12 @@ export function ProjetoGantt({ projetos }: { projetos: Projeto[] }) {
                       to={`/projetos/${projeto.id}`}
                       className={cn(
                         "absolute top-1/2 -translate-y-1/2 flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-white shadow-sm transition hover:brightness-110",
-                        saudeBarra[projeto.saude_atual]
+                        preOperacao
+                          ? "bg-red-600 ring-1 ring-red-300"
+                          : saudeBarra[projeto.saude_atual]
                       )}
                       style={{ left, width: Math.max(width, 24) }}
-                      title={`${projeto.codigo} · ${cliente?.nome_fantasia ?? "—"} · ${formatDate(inicio.toISOString())} → ${formatDate(fim.toISOString())} · ${SAUDE_LABEL[projeto.saude_atual]}`}
+                      title={`${projeto.codigo} · ${cliente?.nome_fantasia ?? "—"} · ${formatDate(inicio.toISOString())} → ${formatDate(fim.toISOString())} · ${preOperacao ? `${faseDoProjeto?.nome} (não operando)` : SAUDE_LABEL[projeto.saude_atual]}`}
                     >
                       {cats.slice(0, 1).map((cat) => (
                         <Badge
