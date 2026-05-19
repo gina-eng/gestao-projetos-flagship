@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Plus, Filter, LayoutGrid, List as ListIcon, X, Columns, Search } from "lucide-react";
+import {
+  Plus,
+  Filter,
+  LayoutGrid,
+  List as ListIcon,
+  GanttChart,
+  X,
+  Columns,
+  Search,
+} from "lucide-react";
 import { useApp } from "@/store";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/Layout";
 import { ProjetoFormDialog } from "@/components/projetos/ProjetoFormDialog";
 import { ProjetoKanban } from "@/components/projetos/ProjetoKanban";
+import { ProjetoGantt } from "@/components/projetos/ProjetoGantt";
 import { FasesManagerDialog } from "@/components/projetos/FasesManagerDialog";
 import {
   categoriasDoProjeto,
@@ -34,7 +44,7 @@ const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "cr
   critico: "critico",
 };
 
-type ViewMode = "kanban" | "lista";
+type ViewMode = "kanban" | "lista" | "gantt";
 
 export function ProjetosPage() {
   const { projetos, clientes, produtos, fases } = useApp();
@@ -119,6 +129,15 @@ export function ProjetosPage() {
               >
                 <ListIcon className="h-3.5 w-3.5" />
                 Lista
+              </button>
+              <button
+                onClick={() => setView("gantt")}
+                className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium ${
+                  view === "gantt" ? "bg-muted text-foreground" : "text-muted-foreground"
+                }`}
+              >
+                <GanttChart className="h-3.5 w-3.5" />
+                Gantt
               </button>
             </div>
             <Button variant="outline" onClick={() => setFasesDialogOpen(true)}>
@@ -209,6 +228,8 @@ export function ProjetosPage() {
 
       {view === "kanban" ? (
         <ProjetoKanban projetos={filtrados} />
+      ) : view === "gantt" ? (
+        <ProjetoGantt projetos={filtrados} />
       ) : (
         <Card>
           <CardContent className="p-0">
