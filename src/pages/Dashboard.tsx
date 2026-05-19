@@ -935,6 +935,19 @@ function EvolucaoCarteira({
                           label="Receita mês adicionada"
                           value={formatCurrency(e.receitaAdicionada)}
                         />
+                        {idx === mesAtualIdx && tratativa.quantidade > 0 && (
+                          <>
+                            <div className="my-1.5 border-t border-border/60" />
+                            <TooltipRow
+                              dotClass="bg-red-500"
+                              label={`Em tratativa (${tratativa.quantidade} ${tratativa.quantidade === 1 ? "card" : "cards"})`}
+                              value={formatCurrency(tratativa.tcv)}
+                            />
+                            <p className="pl-3 text-[10px] italic text-muted-foreground">
+                              TCV em aberto — projetos ainda não em operação
+                            </p>
+                          </>
+                        )}
                       </div>
                       <div className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1 rotate-45 border-b border-r border-border bg-card" />
                     </div>
