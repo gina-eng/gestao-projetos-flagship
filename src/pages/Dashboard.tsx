@@ -23,6 +23,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/Layout";
 import {
   categoriasDoProjeto,
+  ehFaseConcluidoChurn,
+  ehFaseEncerramento,
   formatCurrency,
   formatDate,
   produtosDoProjeto,
@@ -46,7 +48,18 @@ const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "cr
 export function DashboardPage() {
   const { clientes, projetos, pagamentos, produtos, fases, sessao } = useApp();
 
-  const projetosAtivos = projetos.filter((p) => p.status === "ativo");
+  // Fases de encerramento (Concluído / Concluído Churn) — projetos nessas
+  // fases NÃO contam como ativos, mesmo que `status` ainda esteja "ativo".
+  const idsFasesEncerramento = new Set(
+    fases.filter((f) => ehFaseEncerramento(f.nome)).map((f) => f.id)
+  );
+  const idsFasesConcluidoChurn = new Set(
+    fases.filter((f) => ehFaseConcluidoChurn(f.nome)).map((f) => f.id)
+  );
+
+  const projetosAtivos = projetos.filter(
+    (p) => p.status === "ativo" && !idsFasesEncerramento.has(p.fase_atual)
+  );
   // Categorias presentes em um projeto (set, pode ter mais de uma).
   const categoriasDe = (projetoId: string) => {
     const p = projetos.find((x) => x.id === projetoId);
@@ -54,12 +67,29 @@ export function DashboardPage() {
     return categoriasDoProjeto(p, produtos);
   };
 
+  // Soma das parcelas pagas de um projeto (segurança contra churn parcial).
+  const totalPagoDoProjeto = (projetoId: string): number => {
+    return pagamentos
+      .filter((pag) => pag.projeto_id === projetoId)
+      .flatMap((pag) => pag.parcelas)
+      .filter((par) => par.status === "pago")
+      .reduce((acc, par) => acc + par.valor, 0);
+  };
+
   // Receita do mês: soma das parcelas com vencimento no mês corrente,
   // somando o que já foi recebido + o que ainda está em aberto (previsto/atrasado).
   // Exclui canceladas. Cobre tanto recorrentes quanto one-time.
   // TCV: valor total do contrato ao longo do LT (recorrente × LT + one-time).
-  const tcvDe = (p: typeof projetosAtivos[number]) =>
-    p.modelo_cobranca === "recorrente" ? p.valor_total * (p.lt_meses ?? 12) : p.valor_total;
+  // Para projetos em fase "Concluído Churn", o "TCV efetivo" cai para apenas
+  // o que foi efetivamente pago — se nada foi pago, vira zero.
+  const tcvDe = (p: typeof projetos[number]) => {
+    if (idsFasesConcluidoChurn.has(p.fase_atual)) {
+      return totalPagoDoProjeto(p.id);
+    }
+    return p.modelo_cobranca === "recorrente"
+      ? p.valor_total * (p.lt_meses ?? 12)
+      : p.valor_total;
+  };
 
   const inicioDoMes = new Date();
   inicioDoMes.setDate(1);
@@ -82,7 +112,19 @@ export function DashboardPage() {
       { total: 0, recebido: 0, aberto: 0 }
     );
 
-  const receitaTCV = projetosAtivos.reduce((acc, p) => acc + tcvDe(p), 0);
+  // TCV total: somamos projetos ativos + projetos em "Concluído Churn" que
+  // tiveram algum pagamento (mantém histórico do que foi efetivamente recebido).
+  // Projetos em "Concluído Churn" SEM pagamento ficam fora.
+  const projetosParaTCV = [
+    ...projetosAtivos,
+    ...projetos.filter(
+      (p) =>
+        idsFasesConcluidoChurn.has(p.fase_atual) &&
+        totalPagoDoProjeto(p.id) > 0 &&
+        !projetosAtivos.some((a) => a.id === p.id)
+    ),
+  ];
+  const receitaTCV = projetosParaTCV.reduce((acc, p) => acc + tcvDe(p), 0);
 
   // ─── Em tratativa: projetos cadastrados mas ainda não em operação ───
   // Identifica pela fase atual (nome contém "tratativa", case-insensitive).

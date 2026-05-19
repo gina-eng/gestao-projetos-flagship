@@ -179,6 +179,37 @@ export const TIPO_NEGOCIACAO_LABEL_CURTO: Record<TipoNegociacao, string> = {
   recorrente_executar: "Executar",
 };
 
+// ─── Fases de encerramento ───
+// As fases do kanban são dinâmicas (operador renomeia). Para identificar
+// projetos "encerrados" usamos match por nome (case-insensitive, sem acento).
+//
+// - "Concluído" → projeto entregue e finalizado normalmente.
+// - "Concluído Churn" → cliente desistiu antes da entrega completa.
+// Ambos NÃO devem contar como projetos ativos.
+
+function normalizar(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "");
+}
+
+export function ehFaseConcluidoChurn(faseNome: string | undefined): boolean {
+  if (!faseNome) return false;
+  const n = normalizar(faseNome);
+  return n.includes("concluido") && n.includes("churn");
+}
+
+export function ehFaseConcluidoNormal(faseNome: string | undefined): boolean {
+  if (!faseNome) return false;
+  const n = normalizar(faseNome);
+  return n.includes("concluido") && !n.includes("churn");
+}
+
+export function ehFaseEncerramento(faseNome: string | undefined): boolean {
+  return ehFaseConcluidoChurn(faseNome) || ehFaseConcluidoNormal(faseNome);
+}
+
 // ─── Máscaras de input ───
 
 // Formata digitação progressiva de CNPJ no padrão XX.XXX.XXX/XXXX-XX.
