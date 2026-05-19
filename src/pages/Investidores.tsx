@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/layout/Layout";
 import { InvestidorFormDialog } from "@/components/investidores/InvestidorFormDialog";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, projetoEstaAtivo } from "@/lib/utils";
 import { FUNCOES_SQUAD, Investidor } from "@/types";
 
 export function InvestidoresPage() {
-  const { investidores, projetos } = useApp();
+  const { investidores, projetos, fases } = useApp();
   const [busca, setBusca] = useState("");
   const [editando, setEditando] = useState<Investidor | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -30,7 +30,9 @@ export function InvestidoresPage() {
 
   function metricasInvestidor(invId: string) {
     const projetosDele = projetos.filter(
-      (p) => p.status === "ativo" && p.squad.some((s) => s.investidor_id === invId)
+      (p) =>
+        projetoEstaAtivo(p, fases) &&
+        p.squad.some((s) => s.investidor_id === invId)
     );
     // TCV por projeto: prioriza valor_tcv; fallback recorrente = valor_total × lt_meses;
     // fallback one-time = valor_total.

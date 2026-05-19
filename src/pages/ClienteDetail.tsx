@@ -32,6 +32,7 @@ import {
   formatCurrency,
   formatDate,
   produtosDoProjeto,
+  projetoEstaAtivo,
   uid,
   variantCategoria,
 } from "@/lib/utils";
@@ -192,7 +193,7 @@ export function ClienteDetailPage() {
   async function excluir() {
     if (!saved) return;
     const projetosAtivosCli = projetos.filter(
-      (p) => p.cliente_id === saved.id && p.status === "ativo"
+      (p) => p.cliente_id === saved.id && projetoEstaAtivo(p, fases)
     ).length;
     const ok = window.confirm(
       `Excluir o cliente "${saved.sigla} · ${saved.nome_fantasia}"?\n\n` +

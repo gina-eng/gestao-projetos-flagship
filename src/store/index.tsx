@@ -626,7 +626,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // churn e excluido são estados terminais manuais — não toca.
       if (cli.status === "churn" || cli.status === "excluido") return;
       const temAtivo = projetosCorrentes.some(
-        (p) => p.cliente_id === clienteId && p.status === "ativo"
+        (p) =>
+          p.cliente_id === clienteId &&
+          p.status === "ativo" &&
+          !ehFaseEncerramento(
+            state.fases.find((f) => f.id === p.fase_atual)?.nome
+          )
       );
       let novoStatus: Cliente["status"];
       if (temAtivo) {

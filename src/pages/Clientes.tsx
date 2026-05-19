@@ -16,12 +16,12 @@ import {
   STATUS_CLIENTE_LABEL,
   TIERS,
 } from "@/types";
-import { labelSegmento } from "@/lib/utils";
+import { labelSegmento, projetoEstaAtivo } from "@/lib/utils";
 
 type ViewMode = "kanban" | "lista";
 
 export function ClientesPage() {
-  const { clientes, projetos } = useApp();
+  const { clientes, projetos, fases } = useApp();
   const [busca, setBusca] = useState("");
   const [editando, setEditando] = useState<Cliente | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -114,8 +114,8 @@ export function ClientesPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtrados.map((c) => {
             const projetosDoCliente = projetos.filter((p) => p.cliente_id === c.id);
-            const ativos = projetosDoCliente.filter(
-              (p) => p.status === "ativo"
+            const ativos = projetosDoCliente.filter((p) =>
+              projetoEstaAtivo(p, fases)
             ).length;
             return (
               <Link key={c.id} to={`/clientes/${c.id}`} className="block">

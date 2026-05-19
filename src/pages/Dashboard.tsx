@@ -24,10 +24,11 @@ import { PageHeader } from "@/components/layout/Layout";
 import {
   categoriasDoProjeto,
   ehFaseConcluidoChurn,
-  ehFaseEncerramento,
   formatCurrency,
   formatDate,
   produtosDoProjeto,
+  projetoEstaAtivo,
+  projetoEstavaAtivoEm,
   variantCategoria,
 } from "@/lib/utils";
 import {
@@ -49,18 +50,14 @@ const saudeVariant: Record<SaudeProjeto, "saudavel" | "alerta" | "cuidado" | "cr
 export function DashboardPage() {
   const { clientes, projetos, pagamentos, produtos, fases, sessao } = useApp();
 
-  // Fases de encerramento (Concluído / Concluído Churn) — projetos nessas
-  // fases NÃO contam como ativos, mesmo que `status` ainda esteja "ativo".
-  const idsFasesEncerramento = new Set(
-    fases.filter((f) => ehFaseEncerramento(f.nome)).map((f) => f.id)
-  );
+  // IDs de fases especiais para classificações específicas.
   const idsFasesConcluidoChurn = new Set(
     fases.filter((f) => ehFaseConcluidoChurn(f.nome)).map((f) => f.id)
   );
 
-  const projetosAtivos = projetos.filter(
-    (p) => p.status === "ativo" && !idsFasesEncerramento.has(p.fase_atual)
-  );
+  // "Ativo" = status ativo E fase NÃO de encerramento. Helper centraliza
+  // essa regra em todo o sistema.
+  const projetosAtivos = projetos.filter((p) => projetoEstaAtivo(p, fases));
   // Categorias presentes em um projeto (set, pode ter mais de uma).
   const categoriasDe = (projetoId: string) => {
     const p = projetos.find((x) => x.id === projetoId);
@@ -651,17 +648,12 @@ function EvolucaoCarteira({
         return true;
       }).length;
 
-      // Projetos ATIVOS ao final do mês: assinatura já aconteceu e ainda não
-      // fizeram churn (sem data_churn do cliente até o fim do mês).
+      // Projetos ATIVOS ao final do mês: assinatura já aconteceu, cliente
+      // não fez churn antes do fim, e o projeto não foi encerrado antes
+      // do fim (Concluído ou Concluído Churn).
       const projetosAtivosFim = projetos.filter((p) => {
-        const dAss = new Date(p.data_assinatura ?? p.data_inicio);
-        if (dAss >= fim) return false;
         const cli = clientes.find((c) => c.id === p.cliente_id);
-        if (cli?.data_churn) {
-          const dChurn = new Date(cli.data_churn);
-          if (dChurn < fim) return false;
-        }
-        return true;
+        return projetoEstavaAtivoEm(p, fases, fim, cli?.data_churn);
       }).length;
 
       // Clientes que viraram churn neste mês (nível cliente, antigo)

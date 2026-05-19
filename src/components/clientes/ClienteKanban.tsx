@@ -4,7 +4,7 @@ import { AlertTriangle } from "lucide-react";
 import { useApp } from "@/store";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { cn, labelSegmento } from "@/lib/utils";
+import { cn, labelSegmento, projetoEstaAtivo } from "@/lib/utils";
 import {
   type Cliente,
   type FaseCliente,
@@ -23,7 +23,7 @@ function faseDoCliente(c: Cliente): FaseCliente {
 }
 
 export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
-  const { projetos, moveClienteStatus } = useApp();
+  const { projetos, fases, moveClienteStatus } = useApp();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [hoverFase, setHoverFase] = useState<FaseCliente | null>(null);
 
@@ -60,7 +60,7 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
 
     // Avisos de coerência (mas não bloqueiam o movimento).
     const projetosAtivos = projetos.filter(
-      (p) => p.cliente_id === id && p.status === "ativo"
+      (p) => p.cliente_id === id && projetoEstaAtivo(p, fases)
     ).length;
 
     if (fase === "ativo" && projetosAtivos === 0) {
@@ -128,7 +128,7 @@ export function ClienteKanban({ clientes }: { clientes: Cliente[] }) {
                 ) : (
                   cards.map((c) => {
                     const projetosAtivos = projetos.filter(
-                      (p) => p.cliente_id === c.id && p.status === "ativo"
+                      (p) => p.cliente_id === c.id && projetoEstaAtivo(p, fases)
                     ).length;
                     const totalProjetos = projetos.filter(
                       (p) => p.cliente_id === c.id

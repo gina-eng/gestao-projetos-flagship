@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type {
   CategoriaV4,
+  Fase,
   ItemNegociacao,
   Produto,
   Projeto,
@@ -209,6 +210,46 @@ export function ehFaseConcluidoNormal(faseNome: string | undefined): boolean {
 
 export function ehFaseEncerramento(faseNome: string | undefined): boolean {
   return ehFaseConcluidoChurn(faseNome) || ehFaseConcluidoNormal(faseNome);
+}
+
+// Verdade única para "este projeto está ativo agora": precisa ter status
+// "ativo" E não estar numa fase de encerramento. Usar isso em qualquer
+// contagem ou KPI atual. Para análise histórica (mês passado), ver
+// `projetoEstavaAtivoEm`.
+export function projetoEstaAtivo(p: Projeto, fases: Fase[]): boolean {
+  if (p.status !== "ativo") return false;
+  const fase = fases.find((f) => f.id === p.fase_atual);
+  return !ehFaseEncerramento(fase?.nome);
+}
+
+// Versão histórica: "este projeto estava ativo até o final da data X?".
+// Considera assinatura, data_conclusao_real e churn do cliente.
+export function projetoEstavaAtivoEm(
+  p: Projeto,
+  fases: Fase[],
+  fimDataExclusivo: Date,
+  clienteDataChurn?: string
+): boolean {
+  // Ainda não tinha sido assinado.
+  const dAss = new Date(p.data_assinatura ?? p.data_inicio);
+  if (isNaN(dAss.getTime()) || dAss >= fimDataExclusivo) return false;
+  // Cliente já tinha feito churn antes do fim.
+  if (clienteDataChurn) {
+    const dChurn = new Date(clienteDataChurn);
+    if (!isNaN(dChurn.getTime()) && dChurn < fimDataExclusivo) return false;
+  }
+  // Projeto encerrado (Concluído ou Concluído Churn) ANTES do fim.
+  const fase = fases.find((f) => f.id === p.fase_atual);
+  if (ehFaseEncerramento(fase?.nome)) {
+    if (p.data_conclusao_real) {
+      const dConcl = new Date(p.data_conclusao_real);
+      if (!isNaN(dConcl.getTime()) && dConcl < fimDataExclusivo) return false;
+    } else {
+      // Está em fase de encerramento mas sem data — assume encerrado já.
+      return false;
+    }
+  }
+  return true;
 }
 
 // Status do projeto derivado da fase atual. A regra de sincronização é:
