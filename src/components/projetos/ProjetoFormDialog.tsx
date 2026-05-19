@@ -45,6 +45,7 @@ import {
   categoriasDoTipo,
   formatCurrency,
   itensDoProjeto,
+  statusDaFase,
   uid,
   variantCategoria,
   TIPO_NEGOCIACAO_LABEL,
@@ -697,7 +698,14 @@ export function ProjetoFormDialog({
               <Label>Fase atual</Label>
               <Select
                 value={form.fase_atual}
-                onValueChange={(v) => setField("fase_atual", v as FaseProjeto)}
+                onValueChange={(v) => {
+                  const faseObj = fasesOrdenadas.find((f) => f.id === v);
+                  setForm((f) => ({
+                    ...f,
+                    fase_atual: v as FaseProjeto,
+                    status: statusDaFase(faseObj?.nome, f.status),
+                  }));
+                }}
               >
                 <SelectTrigger>
                   <SelectValue />

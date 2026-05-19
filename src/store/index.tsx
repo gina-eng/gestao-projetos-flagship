@@ -22,7 +22,7 @@ import {
 import { readKey, STORAGE_KEYS, writeKey } from "./storage";
 import * as api from "@/lib/api";
 import { supabase } from "@/lib/supabase";
-import { ehFaseEncerramento, uid } from "@/lib/utils";
+import { ehFaseEncerramento, statusDaFase, uid } from "@/lib/utils";
 import {
   diffCliente,
   diffInvestidor,
@@ -1028,15 +1028,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const dataConclusaoReal = entrouEmEncerramento
         ? new Date().toISOString().slice(0, 10)
         : proj.data_conclusao_real;
+      // Sincroniza status com a fase: Concluído → "concluido",
+      // Concluído Churn → "churn", saída de fase de encerramento → "ativo".
+      const novoStatus = statusDaFase(novaFaseObj?.nome, proj.status);
+      const statusMudou = novoStatus !== proj.status;
       const novo: Projeto = {
         ...proj,
         fase_atual: novaFase,
         data_conclusao_real: dataConclusaoReal,
+        status: novoStatus,
       };
       try {
-        // Persiste a mudança completa (fase + data_conclusao_real) quando a
-        // data foi atualizada; senão usa o atalho mais leve de moveFase.
-        if (entrouEmEncerramento) {
+        // Quando há mudança além da fase (data_conclusao_real ou status),
+        // persiste o projeto inteiro. Caso contrário usa o atalho leve.
+        if (entrouEmEncerramento || statusMudou) {
           await api.upsertProjeto(novo);
         } else {
           await api.moveProjetoFase(projetoId, novaFase);
@@ -1056,14 +1061,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         },
         state.sessao
       );
+      const projetosAtualizados = state.projetos.map((p) =>
+        p.id === projetoId ? novo : p
+      );
       setState((s) => ({
         ...s,
-        projetos: s.projetos.map((p) => (p.id === projetoId ? novo : p)),
+        projetos: projetosAtualizados,
         auditoria: [registro, ...s.auditoria],
       }));
       persistirAudit(registro, state.sessao?.email);
+      // Se o status do projeto mudou (entrou ou saiu de encerramento), o
+      // cliente vinculado pode ter mudado de fase (ativo ↔ inativo).
+      if (statusMudou) {
+        await reavaliarStatusCliente(
+          proj.cliente_id,
+          projetosAtualizados,
+          state.clientes
+        );
+      }
     },
-    [state.projetos, state.fases, state.sessao, persistirAudit]
+    [
+      state.projetos,
+      state.fases,
+      state.sessao,
+      state.clientes,
+      persistirAudit,
+      reavaliarStatusCliente,
+    ]
   );
 
   // ----- PAGAMENTO -----

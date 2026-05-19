@@ -5,6 +5,7 @@ import type {
   ItemNegociacao,
   Produto,
   Projeto,
+  StatusProjeto,
   TipoNegociacao,
 } from "@/types";
 
@@ -208,6 +209,22 @@ export function ehFaseConcluidoNormal(faseNome: string | undefined): boolean {
 
 export function ehFaseEncerramento(faseNome: string | undefined): boolean {
   return ehFaseConcluidoChurn(faseNome) || ehFaseConcluidoNormal(faseNome);
+}
+
+// Status do projeto derivado da fase atual. A regra de sincronização é:
+// - Fase "Concluído Churn"  → status "churn"
+// - Fase "Concluído" normal → status "concluido"
+// - Qualquer outra fase     → se estava em "concluido"/"churn", volta a "ativo"
+//                             (assume retomada); caso contrário preserva o
+//                             status atual (não mexe em "pausado" etc.).
+export function statusDaFase(
+  faseNome: string | undefined,
+  statusAtual: StatusProjeto
+): StatusProjeto {
+  if (ehFaseConcluidoChurn(faseNome)) return "churn";
+  if (ehFaseConcluidoNormal(faseNome)) return "concluido";
+  if (statusAtual === "concluido" || statusAtual === "churn") return "ativo";
+  return statusAtual;
 }
 
 // ─── Máscaras de input ───

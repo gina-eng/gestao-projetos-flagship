@@ -48,6 +48,7 @@ import {
   formatDate,
   itensDoProjeto,
   produtosDoProjeto,
+  statusDaFase,
   uid,
   variantCategoria,
   TIPO_NEGOCIACAO_LABEL,
@@ -1021,11 +1022,19 @@ function DadosProjetoCard({
           </div>
         </Field>
 
-        {/* Fase atual */}
+        {/* Fase atual — ao mudar, sincroniza o status automaticamente
+            (Concluído → "concluido", Concluído Churn → "churn"). */}
         <Field label="Fase atual">
           <Select
             value={draft.fase_atual}
-            onValueChange={(v) => setField("fase_atual", v)}
+            onValueChange={(v) => {
+              const faseObj = fasesOrdenadas.find((f) => f.id === v);
+              setDraft((d) => {
+                if (!d) return d;
+                const novoStatus = statusDaFase(faseObj?.nome, d.status);
+                return { ...d, fase_atual: v, status: novoStatus };
+              });
+            }}
           >
             <SelectTrigger className="h-9 text-sm">
               <SelectValue />
