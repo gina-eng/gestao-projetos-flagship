@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  Clock,
   Store,
   Layers,
   Sparkles,
@@ -219,34 +220,8 @@ export function DashboardPage() {
         pagamentos={pagamentos}
         receitaMes={receitaMes}
         tcv={receitaTCV}
+        tratativa={tratativaResumo}
       />
-
-      {tratativaResumo.quantidade > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-red-200 bg-red-50/50 px-3 py-2 text-xs">
-          <span className="flex items-center gap-1.5 font-medium text-red-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-            Em tratativa
-          </span>
-          <span className="text-muted-foreground">
-            <span className="font-semibold tabular-nums text-foreground">
-              {tratativaResumo.quantidade}
-            </span>{" "}
-            {tratativaResumo.quantidade === 1 ? "card" : "cards"}
-          </span>
-          <span className="text-muted-foreground">
-            TCV{" "}
-            <span className="font-semibold tabular-nums text-foreground">
-              {formatCurrency(tratativaResumo.tcv)}
-            </span>
-          </span>
-          <Link
-            to="/projetos"
-            className="ml-auto text-[11px] font-medium text-red-700 hover:underline"
-          >
-            Ver no Kanban →
-          </Link>
-        </div>
-      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -548,12 +523,14 @@ function EvolucaoCarteira({
   pagamentos,
   receitaMes,
   tcv,
+  tratativa,
 }: {
   clientes: ReturnType<typeof useApp>["clientes"];
   projetos: ReturnType<typeof useApp>["projetos"];
   pagamentos: ReturnType<typeof useApp>["pagamentos"];
   receitaMes: { total: number; recebido: number; aberto: number };
   tcv: number;
+  tratativa: { quantidade: number; tcv: number };
 }) {
   const [periodo, setPeriodo] = useState<number>(6);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -730,11 +707,17 @@ function EvolucaoCarteira({
       </CardHeader>
 
       <CardContent>
-        {/* Sumário compacto — 5 cards (Receita do mês com split + TCV +
-            Projetos ativos + Aquisição + Churn) */}
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {/* Sumário compacto — mini-cards (Receita do mês + TCV + Em tratativa
+            quando há + Projetos ativos + Aquisição + Churn). */}
+        <div
+          className={cn(
+            "mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2",
+            tratativa.quantidade > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+          )}
+        >
           <ReceitaMesCard receitaMes={receitaMes} />
           <TcvCard tcv={tcv} />
+          {tratativa.quantidade > 0 && <TratativaCard tratativa={tratativa} />}
           <MetricSummary
             icon={KanbanSquare}
             label="Projetos ativos"
@@ -1045,6 +1028,47 @@ function ReceitaMesCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function TratativaCard({
+  tratativa,
+}: {
+  tratativa: { quantidade: number; tcv: number };
+}) {
+  return (
+    <Link
+      to="/projetos"
+      className="rounded-lg border border-red-200 bg-card p-3 transition-colors hover:bg-red-50/40"
+    >
+      <div className="flex items-start gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-red-600">
+          <Clock className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" />
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Em tratativa
+            </p>
+          </div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-base font-bold tabular-nums text-foreground">
+              {tratativa.quantidade}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {tratativa.quantidade === 1 ? "card" : "cards"}
+            </span>
+          </div>
+          <p className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+            TCV{" "}
+            <span className="font-semibold tabular-nums text-foreground">
+              {formatCurrency(tratativa.tcv)}
+            </span>
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }
 
