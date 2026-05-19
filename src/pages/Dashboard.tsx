@@ -83,6 +83,23 @@ export function DashboardPage() {
 
   const receitaTCV = projetosAtivos.reduce((acc, p) => acc + tcvDe(p), 0);
 
+  // ─── Em tratativa: projetos cadastrados mas ainda não em operação ───
+  // Identifica pela fase atual (nome contém "tratativa", case-insensitive).
+  // Mesma regra usada no Gantt para destacar em vermelho.
+  const fasesPreOperacao = new Set(
+    fases.filter((f) => f.nome.toLowerCase().includes("tratativa")).map((f) => f.id)
+  );
+  const projetosEmTratativa = projetosAtivos.filter((p) =>
+    fasesPreOperacao.has(p.fase_atual)
+  );
+  const tratativaResumo = {
+    quantidade: projetosEmTratativa.length,
+    tcv: projetosEmTratativa.reduce((acc, p) => acc + tcvDe(p), 0),
+    receitaMes: projetosEmTratativa
+      .filter((p) => p.modelo_cobranca === "recorrente")
+      .reduce((acc, p) => acc + p.valor_total, 0),
+  };
+
 
   const hoje = new Date();
   const dataLimite = new Date();
@@ -206,6 +223,59 @@ export function DashboardPage() {
         receitaMes={receitaMes}
         tcv={receitaTCV}
       />
+
+      {tratativaResumo.quantidade > 0 && (
+        <Card className="border-red-200 bg-red-50/40">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-2 w-2 animate-pulse rounded-full bg-red-500" />
+              <CardTitle className="text-title-card text-red-700">
+                Em tratativa — fora de operação
+              </CardTitle>
+            </div>
+            <Button variant="ghost" size="sm" asChild className="text-red-700">
+              <Link to="/projetos">Ver no Kanban</Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-md border border-red-200 bg-white px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                  Cards
+                </p>
+                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
+                  {tratativaResumo.quantidade}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  {tratativaResumo.quantidade === 1 ? "projeto" : "projetos"} aguardando início
+                </p>
+              </div>
+              <div className="rounded-md border border-red-200 bg-white px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                  TCV em tratativa
+                </p>
+                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
+                  {formatCurrency(tratativaResumo.tcv)}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Soma do valor de contrato
+                </p>
+              </div>
+              <div className="rounded-md border border-red-200 bg-white px-3 py-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                  Receita potencial / mês
+                </p>
+                <p className="mt-0.5 text-2xl font-semibold tabular-nums text-foreground">
+                  {formatCurrency(tratativaResumo.receitaMes)}
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Mensal dos recorrentes
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
